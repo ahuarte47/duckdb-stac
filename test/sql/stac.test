@@ -1,0 +1,23 @@
+# name: test/sql/stac.test
+# description: test stac extension
+# group: [sql]
+
+# Before we load the extension, this will fail
+statement error
+SELECT stac('Sam');
+----
+Catalog Error: Scalar Function with name stac does not exist!
+
+# Require statement will ensure this test is run with this extension loaded
+require stac
+
+# Confirm the extension works
+query I
+SELECT stac('Sam');
+----
+...........🦆 Sam
+
+query I
+SELECT stac_openssl_version('Michael') ILIKE 'Stac Michael, my linked OpenSSL version is OpenSSL%';
+----
+true
