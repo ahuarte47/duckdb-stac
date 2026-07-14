@@ -2,3 +2,17 @@
 # description: test stac extension
 # group: [sql]
 
+# Before we load the extension, this will fail
+statement error
+SELECT * FROM STAC_Read('');
+----
+Catalog Error: Table Function with name stac_read does not exist!
+
+# Require statement will ensure this test is run with this extension loaded
+require stac
+
+# Confirm the extension works
+query I
+SELECT count(id) FROM STAC_Read('./test/data/catalog.json');
+----
+1

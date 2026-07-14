@@ -4,7 +4,7 @@ namespace duckdb {
 
 class ExtensionLoader;
 
-struct STACDataFunctions {
+struct STACReadFunctions {
 public:
 	static void Register(ExtensionLoader &loader);
 };

@@ -7,13 +7,16 @@
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
 // STAC
-#include "stac/stac_data_functions.hpp"
+#include "stac/stac_read_functions.hpp"
+#include "stac/stac_types.hpp"
 
 namespace duckdb {
 
 static void LoadInternal(ExtensionLoader &loader) {
 	// Register functions
-	STACDataFunctions::Register(loader);
+	STACReadFunctions::Register(loader);
+	// Register types
+	STACTypes::Register(loader);
 }
 
 void StacExtension::Load(ExtensionLoader &loader) {
