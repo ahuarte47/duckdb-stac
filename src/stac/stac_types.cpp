@@ -3,6 +3,40 @@
 
 namespace duckdb {
 
+const Value ItemRow::NULL_VALUE = Value();
+
+const duckdb::Value &ItemRow::ValueOf(const idx_t &dim_index) const {
+	switch (dim_index) {
+	case STAC_CATALOG_COLUMN_INDEX:
+		return catalog;
+	case STAC_COLLECTION_COLUMN_INDEX:
+		return collection;
+	case STAC_ID_COLUMN_INDEX:
+		return id;
+	case STAC_GEOMETRY_COLUMN_INDEX:
+		return geometry;
+	case STAC_BBOX_COLUMN_INDEX:
+		return bbox;
+	case STAC_EXTENSIONS_COLUMN_INDEX:
+		return extensions;
+	case STAC_LINKS_COLUMN_INDEX:
+		return links;
+	case STAC_ASSETS_COLUMN_INDEX:
+		return assets;
+	default: {
+		// Handle dynamic properties columns
+		const idx_t property_idx = dim_index - STAC_FIRST_PROPERTY_COLUMN_INDEX;
+
+		auto it = this->properties.find(property_idx);
+		if (it != this->properties.end()) {
+			return it->second;
+		} else {
+			return ItemRow::NULL_VALUE;
+		}
+	}
+	}
+}
+
 LogicalType STACTypes::BBOX() {
 	auto bbox_type = LogicalType::STRUCT({{"minx", LogicalType::DOUBLE},
 	                                      {"miny", LogicalType::DOUBLE},

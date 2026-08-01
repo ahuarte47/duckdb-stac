@@ -1,8 +1,12 @@
 set(EXTENSION_SOURCES
     ${EXTENSION_SOURCES}
+    ${CMAKE_CURRENT_SOURCE_DIR}/filter_eval.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/http_request.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/json_geometry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/json_object.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/search_filter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stac_read_functions.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stac_types.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/stac_types_casts.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/xml_element.cpp
     PARENT_SCOPE)

@@ -1,0 +1,81 @@
+# name: test/sql/stac_search.test
+# description: test stac extension
+# group: [sql]
+
+require stac
+
+statement ok
+INSTALL httpfs;
+
+statement ok
+LOAD httpfs;
+
+statement ok
+INSTALL spatial;
+
+statement ok
+LOAD spatial;
+
+query I
+SELECT
+    id
+FROM
+    STAC_Search(
+        'https://earth-search.aws.element84.com/v0/search',
+        collections := ['sentinel-s2-l2a-cogs'],
+        ids := ['S2B_30TWN_20210930_0_L2A', 'S2B_30TXN_20210930_0_L2A']
+    )
+ORDER BY
+    id
+;
+----
+S2B_30TWN_20210930_0_L2A
+S2B_30TXN_20210930_0_L2A
+
+query I
+SELECT
+    id
+FROM
+    STAC_Search(
+        'https://earth-search.aws.element84.com/v0/search',
+        collections := ['sentinel-s2-l2a-cogs'],
+        datetime := '2021-09-30/2021-09-30',
+        bbox := [-1.695007724869786, 42.788757186108654, -1.604482013650674, 42.84244150196227]
+    )
+ORDER BY
+    id
+;
+----
+S2B_30TWN_20210930_0_L2A
+S2B_30TXN_20210930_0_L2A
+
+query I
+SELECT
+    count(*)
+FROM
+    STAC_Search(
+        'https://earth-search.aws.element84.com/v0/search',
+        collections := ['sentinel-s2-l2a-cogs'],
+        datetime := '2021-09-30/2021-10-30',
+        bbox := [-1.695007724869786, 42.788757186108654, -1.604482013650674, 42.84244150196227]
+    )
+;
+----
+14
+
+query I
+SELECT
+    id
+FROM
+    STAC_Search(
+        'https://earth-search.aws.element84.com/v0/search',
+        collections := ['sentinel-s2-l2a-cogs'],
+        datetime := '2021-09-30/2021-09-30',
+        intersects := ST_MakeEnvelope(-1.695007724869786, 42.788757186108654, -1.604482013650674, 42.84244150196227)::GEOMETRY('EPSG::4326')
+    )
+ORDER BY
+    id
+;
+----
+S2B_30TWN_20210930_0_L2A
+S2B_30TXN_20210930_0_L2A

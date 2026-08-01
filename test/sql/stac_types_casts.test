@@ -1,0 +1,22 @@
+# name: test/sql/stac_types_casts.test
+# description: test stac extension
+# group: [sql]
+
+require stac
+
+statement ok
+INSTALL httpfs;
+
+statement ok
+LOAD httpfs;
+
+query II
+SELECT
+    id, bbox
+FROM
+    STAC_Read('https://raw.githubusercontent.com/radiantearth/stac-spec/refs/heads/master/examples/catalog.json')
+WHERE
+    bbox.minx > 1
+;
+----
+proj-example	{'minx': 148.13933, 'miny': 59.51584, 'maxx': 152.52758, 'maxy': 60.63437}

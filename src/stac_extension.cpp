@@ -9,14 +9,16 @@
 // STAC
 #include "stac/stac_read_functions.hpp"
 #include "stac/stac_types.hpp"
+#include "stac/stac_types_casts.hpp"
 
 namespace duckdb {
 
 static void LoadInternal(ExtensionLoader &loader) {
 	// Register functions
 	STACReadFunctions::Register(loader);
-	// Register types
+	// Register types & casts
 	STACTypes::Register(loader);
+	STACTypesCastsFunctions::Register(loader);
 }
 
 void StacExtension::Load(ExtensionLoader &loader) {

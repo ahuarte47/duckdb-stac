@@ -1,0 +1,43 @@
+# name: test/sql/stac_read_static.test
+# description: test stac extension
+# group: [sql]
+
+require stac
+
+statement ok
+INSTALL httpfs;
+
+statement ok
+LOAD httpfs;
+
+query IIII
+SELECT
+    id, bbox, "cs:anomalous_pixels", "cs:sat_id"
+FROM
+    STAC_Read('https://raw.githubusercontent.com/radiantearth/stac-spec/refs/heads/master/examples/catalog.json')
+WHERE
+    "cs:sat_id" IS NOT NULL
+;
+----
+CS3-20160503_132131_08	{'minx': -122.59750209, 'miny': 37.48803556, 'maxx': -122.2880486, 'maxy': 37.613537207}	0.14	CS3
+
+query I
+SELECT
+    collection
+FROM
+    STAC_Read('https://earth-search.aws.element84.com/v1/collections/sentinel-2-pre-c1-l2a')
+LIMIT
+    11
+;
+----
+sentinel-2-pre-c1-l2a
+sentinel-2-pre-c1-l2a
+sentinel-2-pre-c1-l2a
+sentinel-2-pre-c1-l2a
+sentinel-2-pre-c1-l2a
+sentinel-2-pre-c1-l2a
+sentinel-2-pre-c1-l2a
+sentinel-2-pre-c1-l2a
+sentinel-2-pre-c1-l2a
+sentinel-2-pre-c1-l2a
+sentinel-2-pre-c1-l2a

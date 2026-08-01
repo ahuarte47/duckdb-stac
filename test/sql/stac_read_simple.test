@@ -1,0 +1,32 @@
+# name: test/sql/stac_read_simple.test
+# description: test stac extension
+# group: [sql]
+
+require stac
+
+statement ok
+INSTALL httpfs;
+
+statement ok
+LOAD httpfs;
+
+query IIIII
+SELECT
+    catalog, collection, id, bbox, "proj:code"
+FROM
+    STAC_Read('./test/data/catalog.json')
+;
+----
+examples	landsat-8-l1	proj-example	{'minx': 148.13933, 'miny': 59.51584, 'maxx': 152.52758, 'maxy': 60.63437}	EPSG:32614
+
+query I
+SELECT
+    collection
+FROM
+    STAC_Read('https://eod-catalog-svc-prod.astraea.earth/search?limit=20')
+LIMIT
+    2
+;
+----
+sentinel2_l2a
+sentinel2_l2a
