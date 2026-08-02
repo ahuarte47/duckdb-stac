@@ -2,7 +2,10 @@
         "dependencies": [
                 "openssl",
                 "curl",
-                "libxml2"
+                {
+                        "name": "libxml2",
+                        "default-features": false
+                }
         ],
         "vcpkg-configuration": {
                 "overlay-ports": [
