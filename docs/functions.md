@@ -62,8 +62,14 @@ Searches the content of a SpatioTemporal Asset Catalog (STAC) catalog based on t
 filtering criteria (https://api.stacspec.org/v1.0.0/item-search/) and returns matching items as a table.
 
 The `url` parameter specifies the base URL of the STAC API - Item Search endpoint to query.
-The optional parameters allow filtering by collection IDs, item IDs, bounding box,
-geometry intersection, datetime range, and maximum number of items to return by result page.
+The optional parameters allow filtering by different criteria:
+
+* `collections`: A list of collection IDs to filter the search results.
+* `ids`: A list of item IDs to filter the search results.
+* `bbox`: A bounding box to filter items by spatial intersection, specified as an array of four floats representing the minimum longitude, minimum latitude, maximum longitude, and maximum latitude.
+* `intersects`: A geometry object (EPSG:4326) to filter items by spatial intersection.
+* `datetime`: A string representing a temporal range to filter the search results, specified in the format "start_datetime/end_datetime" (e.g., "2021-01-01T00:00:00Z/2021-12-31T23:59:59Z").
+* `max_items`: An integer specifying the maximum number of items to return in each result page.
 
 This function exposes a STAC catalog as a relational table, following the
 [GeoParquet STAC specification](https://radiantearth.github.io/stac-geoparquet-spec/latest/).
