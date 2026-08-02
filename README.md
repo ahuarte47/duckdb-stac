@@ -1,6 +1,9 @@
 # DuckDB STAC Extension
 
-A DuckDB extension for reading data from SpatioTemporal Asset Catalogs (STAC) using SQL.
+A DuckDB extension for reading data from [SpatioTemporal Asset Catalogs](https://stacspec.org/) (STAC) using SQL.
+
+The STAC specification is a common language to describe geospatial information, so it can more easily be
+worked with, indexed, and discovered.
 
 The extension exposes STAC catalogs as relational tables, following the
 [GeoParquet STAC specification](https://radiantearth.github.io/stac-geoparquet-spec/latest/).
