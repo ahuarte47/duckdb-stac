@@ -7,6 +7,7 @@
 | Function | Summary |
 | --- | --- |
 | [`STAC_Read`](#stac_read) | Reads the content of a STAC catalog from the given URL or JSON file and returns it as a table. |
+| [`STAC_Search`](#stac_search) | Searches a STAC catalog based on the given criteria and returns matching items as a table. |
 
 ----
 
@@ -36,6 +37,54 @@ are promoted to the top level for easier filtering and querying.
 
 ```sql
 SELECT * FROM STAC_Read('https://example.com/stac/collection.json');
+```
+
+----
+
+### STAC_Search
+
+#### Signature
+
+```sql
+STAC_Search (url VARCHAR,
+            [collections VARCHAR[]],
+            [ids VARCHAR[]],
+            [bbox FLOAT[4]],
+            [intersects GEOMETRY('EPSG:4326')],
+            [datetime VARCHAR],
+            [max_items INTEGER]
+            )
+```
+
+#### Description
+
+Searches the content of a SpatioTemporal Asset Catalog (STAC) catalog based on the given STAC API - Item Search
+filtering criteria (https://api.stacspec.org/v1.0.0/item-search/) and returns matching items as a table.
+
+The `url` parameter specifies the base URL of the STAC API - Item Search endpoint to query.
+The optional parameters allow filtering by collection IDs, item IDs, bounding box,
+geometry intersection, datetime range, and maximum number of items to return by result page.
+
+This function exposes a STAC catalog as a relational table, following the
+[GeoParquet STAC specification](https://radiantearth.github.io/stac-geoparquet-spec/latest/).
+
+Each row represents a single STAC item. Almost all item fields are mapped to columns;
+nested JSON structures are preserved as Parquet structs where possible, but item properties
+are promoted to the top level for easier filtering and querying.
+
+#### Example
+
+```sql
+SELECT
+    *
+FROM
+    STAC_Search(
+        'https://earth-search.aws.element84.com/v0/search',
+        collections := ['sentinel-s2-l2a-cogs'],
+        datetime := '2021-09-30/2021-10-30',
+        intersects := ST_MakeEnvelope(-1.695007724869786, 42.788757186108654, -1.604482013650674, 42.84244150196227)::GEOMETRY('EPSG::4326')
+    )
+;
 ```
 
 ----

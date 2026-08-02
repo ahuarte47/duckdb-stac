@@ -1130,8 +1130,8 @@ struct STAC_Search : public STAC_Read {
 	//------------------------------------------------------------------------------------------------------------------
 
 	static constexpr auto DESCRIPTION = R"(
-		Searches the content of a SpatioTemporal Asset Catalog (STAC) catalog using the given Search API filter
-		(https://api.stacspec.org/v1.0.0/item-search/) and returns the matching items as a table.
+		Searches the content of a SpatioTemporal Asset Catalog (STAC) catalog using the given STAC API - Item Search
+		filtering criteria (https://api.stacspec.org/v1.0.0/item-search/) and returns the matching items as a table.
 
 		This function exposes a STAC catalog as a relational table, following the
 		[GeoParquet STAC specification](https://radiantearth.github.io/stac-geoparquet-spec/latest/).
