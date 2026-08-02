@@ -388,6 +388,8 @@ private:
 	std::size_t row_limit = 0;
 	//! Total number of rows read so far by the ItemReader.
 	std::size_t row_count = 0;
+	// Total number of items matched by the filter (if any) in the Catalog.
+	int number_matched = -1;
 
 public:
 	//! The schema of the Catalog.
@@ -414,6 +416,16 @@ public:
 	           const FilterContext &filter_context, idx_t row_offset = 0, std::size_t row_limit = 0)
 	    : context(context), buffer(buffer), filter_context(std::move(filter_context)), row_offset(row_offset),
 	      row_limit(row_limit), schema(schema) {
+	}
+
+	//! Returns the total number of items matched by the filter (if any) in the Catalog.
+	int GetNumberMatched() const {
+		return number_matched;
+	}
+
+	//! Returns the total number of rows read so far by the ItemReader.
+	std::size_t GetRowCount() const {
+		return row_count;
 	}
 
 	//! Reads the content of a STAC JSON links array to extract the child STAC items.
@@ -556,6 +568,9 @@ public:
 			return;
 		}
 		if (strcmp(item_type, "FeatureCollection") == 0) {
+			if (yyjson_is_int(temp_val = yyjson_obj_get(json_val, "numberMatched"))) {
+				number_matched = yyjson_get_int(temp_val);
+			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "features"))) {
 				std::size_t features_size = yyjson_arr_size(temp_val);
 
@@ -743,6 +758,8 @@ struct STAC_Read {
 		idx_t row_offset = 0;
 		// Limit for the rows to be read (A value of 0 means no limit is applied).
 		std::size_t row_limit = 0;
+		// Total number of items matched by the filter (if any) in the Catalog.
+		int number_matched = -1;
 
 		// Optional search criteria for the STAC API item-search.
 		SearchFilter search_filter;
@@ -843,6 +860,12 @@ struct STAC_Read {
 		ItemReader reader(context, buffer, schema, filter_context, bind_data.row_offset, bind_data.row_limit);
 		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, bind_data.search_filter);
 		reader.ReadContentOfJsonObject(json_str, catalog_path);
+
+		// Set the number of items matched by the filter (if any) in the Catalog.
+
+		bind_data.number_matched = reader.GetNumberMatched();
+
+		// Return the global state with the reader.
 
 		return make_uniq_base<GlobalTableFunctionState, State>(std::move(reader));
 	}
@@ -1007,6 +1030,27 @@ struct STAC_Read {
 	}
 
 	//------------------------------------------------------------------------------------------------------------------
+	// Progress Scan
+	//------------------------------------------------------------------------------------------------------------------
+
+	static double Progress(ClientContext &context, const FunctionData *bind_data_p,
+	                       const GlobalTableFunctionState *global_state) {
+		auto &gstate = global_state->Cast<State>();
+
+		const ItemReader &reader = gstate.reader;
+		int number_matched = reader.GetNumberMatched();
+		std::size_t current_row = reader.GetRowCount();
+
+		// The result size is unknown, no progress to report.
+		if (number_matched <= 0 || current_row <= 0) {
+			return 0.0;
+		}
+
+		auto p = 100 * (static_cast<double>(current_row) / static_cast<double>(number_matched));
+		return p > 100 ? 100 : p;
+	}
+
+	//------------------------------------------------------------------------------------------------------------------
 	// Documentation
 	//------------------------------------------------------------------------------------------------------------------
 
@@ -1036,6 +1080,9 @@ struct STAC_Read {
 		tags.insert("category", "table");
 
 		TableFunction func("STAC_Read", {LogicalType::VARCHAR}, Execute, Bind, Init);
+
+		// Enable progress reporting - allows DuckDB to report the progress of the table scan
+		func.table_scan_progress = Progress;
 
 		// Enable projection pushdown - allows DuckDB to tell us which columns are needed
 		// The column_ids will be passed to InitGlobal via TableFunctionInitInput
@@ -1161,6 +1208,9 @@ struct STAC_Search : public STAC_Read {
 		func.named_parameters["bbox"] = LogicalType::LIST(LogicalType::DOUBLE);
 		func.named_parameters["intersects"] = LogicalType::GEOMETRY("EPSG:4326");
 		func.named_parameters["max_items"] = LogicalType::INTEGER;
+
+		// Enable progress reporting - allows DuckDB to report the progress of the table scan
+		func.table_scan_progress = Progress;
 
 		// Enable projection pushdown - allows DuckDB to tell us which columns are needed
 		// The column_ids will be passed to InitGlobal via TableFunctionInitInput
