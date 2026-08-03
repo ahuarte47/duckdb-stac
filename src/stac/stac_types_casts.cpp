@@ -16,6 +16,14 @@ namespace {
 
 struct STACTypesCasts {
 	//------------------------------------------------------------------------------------------------------------------
+	// STAC_ASSET -> STRUCT
+	//------------------------------------------------------------------------------------------------------------------
+
+	static bool Asset2Struct(Vector &source, Vector &result, idx_t count, CastParameters &parameters) {
+		return DefaultCasts::NopCast(source, result, count, parameters);
+	}
+
+	//------------------------------------------------------------------------------------------------------------------
 	// STAC_BBOX -> STRUCT
 	//------------------------------------------------------------------------------------------------------------------
 
@@ -24,12 +32,24 @@ struct STACTypesCasts {
 	}
 
 	//------------------------------------------------------------------------------------------------------------------
+	// STAC_LINK -> STRUCT
+	//------------------------------------------------------------------------------------------------------------------
+
+	static bool Link2Struct(Vector &source, Vector &result, idx_t count, CastParameters &parameters) {
+		return DefaultCasts::NopCast(source, result, count, parameters);
+	}
+
+	//------------------------------------------------------------------------------------------------------------------
 	// Register
 	//------------------------------------------------------------------------------------------------------------------
 
 	static void Register(ExtensionLoader &loader) {
+		// STAC_ASSET -> STRUCT
+		loader.RegisterCastFunction(STACTypes::ASSET(), LogicalType(LogicalTypeId::STRUCT), Asset2Struct, 0);
 		// STAC_BBOX -> STRUCT
 		loader.RegisterCastFunction(STACTypes::BBOX(), LogicalType(LogicalTypeId::STRUCT), BBox2Struct, 0);
+		// STAC_LINK -> STRUCT
+		loader.RegisterCastFunction(STACTypes::LINK(), LogicalType(LogicalTypeId::STRUCT), Link2Struct, 0);
 	}
 };
 
