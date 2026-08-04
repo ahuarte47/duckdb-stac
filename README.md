@@ -179,6 +179,10 @@ WHERE
 
 For the full function reference and all available options, see [docs/functions.md](docs/functions.md).
 
+## TODO
+
+* Support for STAC API filtering with CQL2 (https://github.com/stac-api-extensions/filter)
+
 ## How do I build it?
 
 This extension is based on the [DuckDB extension template](https://github.com/duckdb/extension-template).
@@ -232,3 +236,5 @@ Then load the extension from its local path:
 ```sql
 LOAD 'build/release/extension/stac/stac.duckdb_extension';
 ```
+
+Enjoy!
