@@ -73,11 +73,11 @@ std::string SearchFilter::AsQueryJson() const {
 	}
 
 	// Add the limit parameter if it is greater than 0.
-	if (limit > 0) {
+	if (max_items > 0) {
 		if (!first_param) {
 			oss << ", ";
 		}
-		oss << "\"limit\": " << limit;
+		oss << "\"limit\": " << max_items;
 	}
 
 	oss << "}";

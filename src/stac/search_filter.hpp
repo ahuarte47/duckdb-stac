@@ -13,7 +13,7 @@ public:
 	std::string datetime;
 	GeometryExtent bbox = GeometryExtent::Empty();
 	Value intersects;
-	int32_t limit = 0;
+	int32_t max_items = 0;
 
 public:
 	//! Checks if the filter criteria are empty.

@@ -806,6 +806,8 @@ struct STAC_Read {
 
 		// Set of properties are dynamic, so we must query the catalog to determine their schema.
 
+		STAC_SCAN_DEBUG_LOG(1, "Reading the schema of the Catalog '%s'...", catalog_path.c_str());
+
 		MemoryStream buffer(Allocator::Get(context));
 
 		ItemSchema schema {context, buffer};
@@ -848,6 +850,8 @@ struct STAC_Read {
 
 		// Read the first page of the Catalog content.
 
+		STAC_SCAN_DEBUG_LOG(1, "Reading first page of the Catalog '%s'...", bind_data.catalog_path.c_str());
+
 		const std::string &catalog_path = bind_data.catalog_path;
 		const ItemSchema &schema = bind_data.schema;
 		MemoryStream &buffer = bind_data.buffer;
@@ -864,6 +868,14 @@ struct STAC_Read {
 		// Set the number of items matched by the filter (if any) in the Catalog.
 
 		bind_data.number_matched = reader.GetNumberMatched();
+
+		STAC_SCAN_DEBUG_LOG(1, "Request matched %d items", bind_data.number_matched);
+
+		if (bind_data.number_matched > 2048 && bind_data.row_limit == 0) {
+			fprintf(stderr,
+			        "STAC: Warning, the request matched %d items, consider refining the query to get fewer results!\n",
+			        bind_data.number_matched);
+		}
 
 		// Return the global state with the reader.
 
@@ -1004,6 +1016,8 @@ struct STAC_Read {
 			HttpHeaders &headers = reader.next_headers;
 			std::string &body = reader.next_body;
 			std::string content_type = "application/json";
+
+			STAC_SCAN_DEBUG_LOG(1, "Reading next page: '%s' (body: '%s')...", href.c_str(), body.c_str());
 
 			auto json_str = ExecuteHttpRequest(context, href, method, headers, body, content_type);
 			reader.ReadContentOfJsonObject(json_str, href);
@@ -1166,7 +1180,7 @@ struct STAC_Search : public STAC_Read {
 
 		input_param = named_params.find("max_items");
 		if (input_param != named_params.end()) {
-			search_filter.limit = MaxValue<int32_t>(IntegerValue::Get(input_param->second), 0);
+			search_filter.max_items = MaxValue<int32_t>(IntegerValue::Get(input_param->second), 0);
 		}
 
 		return result;
