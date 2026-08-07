@@ -111,7 +111,7 @@ static std::string ReadContentOfJsonFile(ClientContext &context, MemoryStream &b
 
 //! Reads the content of a JSON catalog and returns it as a string.
 static std::string ReadContentOfCatalog(ClientContext &context, MemoryStream &buffer, const std::string &catalog_path,
-                                        const SearchFilter &filter) {
+                                        const SearchFilter &filter = SearchFilter()) {
 	if (IsStaticCatalog(catalog_path)) {
 		return ReadContentOfJsonFile(context, buffer, catalog_path);
 	} else if (filter.IsEmpty()) {
@@ -206,7 +206,7 @@ public:
 						href = parent_dir.Join(href_path).ToString();
 					}
 
-					std::string href_str = ReadContentOfJsonFile(context, buffer, href);
+					std::string href_str = ReadContentOfCatalog(context, buffer, href);
 					ParseSchemaOfJsonObject(catalog_id, collection_id, href_str, href);
 				}
 			}
@@ -488,7 +488,7 @@ public:
 						href = parent_dir.Join(href_path).ToString();
 					}
 
-					std::string href_str = ReadContentOfJsonFile(context, buffer, href);
+					std::string href_str = ReadContentOfCatalog(context, buffer, href);
 					ReadContentOfJsonObject(href_str, href);
 				}
 			}
@@ -778,7 +778,7 @@ struct STAC_Read {
 		MemoryStream buffer(Allocator::Get(context));
 
 		ItemSchema schema {context, buffer};
-		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, SearchFilter());
+		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path);
 		schema.ParseSchemaOfJsonObject("", "", json_str, catalog_path);
 
 		for (const auto &prop_name : schema.column_names) {
