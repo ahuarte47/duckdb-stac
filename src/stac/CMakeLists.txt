@@ -8,5 +8,4 @@ set(EXTENSION_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/stac_read_functions.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stac_types.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stac_types_casts.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/xml_element.cpp
     PARENT_SCOPE)

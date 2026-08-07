@@ -7,7 +7,6 @@ set(TARGET_NAME stac)
 # used in cmake with find_package. Feel free to remove or replace with other dependencies.
 # Note that it should also be removed from vcpkg.json to prevent needlessly installing it..
 find_package(OpenSSL REQUIRED)
-find_package(LibXml2 REQUIRED)
 
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
@@ -40,9 +39,6 @@ build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 # Link OpenSSL in both the static library as the loadable extension
 target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
-# Link LibXml2 in both the static library as the loadable extension
-target_link_libraries(${EXTENSION_NAME} LibXml2::LibXml2)
-target_link_libraries(${LOADABLE_EXTENSION_NAME} LibXml2::LibXml2)
 
 install(
   TARGETS ${EXTENSION_NAME}

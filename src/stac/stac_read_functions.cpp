@@ -33,7 +33,6 @@ using namespace duckdb_yyjson; // NOLINT
 #include "json_geometry.hpp"
 #include "json_object.hpp"
 #include "search_filter.hpp"
-#include "xml_element.hpp"
 
 namespace duckdb {
 
@@ -42,29 +41,6 @@ namespace {
 //======================================================================================================================
 // Utility types and functions
 //======================================================================================================================
-
-static constexpr const char *XML_ERROR_PATH = "/S:Fault/faultstring";
-
-//! Extracts the error message of a given HTTP response body.
-static std::string GetXmlErrorMessage(const std::string &response_body) {
-	XmlDocument document = XmlDocument(response_body);
-	xmlXPathContextPtr xpath_ctx = document.GetXPathContext();
-	xmlXPathObjectPtr xpath_obj = nullptr;
-
-	std::string error_msg;
-
-	if ((xpath_obj = xmlXPathEvalExpression(BAD_CAST XML_ERROR_PATH, xpath_ctx)) && xpath_obj->nodesetval &&
-	    xpath_obj->nodesetval->nodeNr > 0) {
-		xmlNodePtr node = xpath_obj->nodesetval->nodeTab[0];
-		error_msg = XmlUtils::GetNodeTextContent(node);
-	}
-	if (xpath_obj) {
-		xmlXPathFreeObject(xpath_obj);
-		xpath_obj = nullptr;
-	}
-
-	return error_msg;
-}
 
 //! Executes an HTTP request and returns the response body as a string.
 static std::string ExecuteHttpRequest(ClientContext &context, const std::string &url, const std::string &method,
@@ -77,15 +53,6 @@ static std::string ExecuteHttpRequest(ClientContext &context, const std::string 
 	HttpResponseData response = HttpRequest::ExecuteHttpRequest(settings, url, method, headers, body, content_type);
 
 	// Handle the HTTP response and check for errors.
-	if (response.content_type == "application/xml") {
-		std::string error_msg = GetXmlErrorMessage(response.body);
-
-		STAC_SCAN_DEBUG_LOG(1, "Failed to fetch the Catalog '%s': (%d) %s", url.c_str(), response.status_code,
-		                    error_msg.c_str());
-
-		throw IOException("Failed to fetch the Catalog '%s': (%d) %s", url.c_str(), response.status_code,
-		                  error_msg.c_str());
-	}
 	if (response.status_code != 200) {
 		throw IOException("Failed to fetch the Catalog '%s': (%d) %s", url.c_str(), response.status_code,
 		                  response.error.c_str());
