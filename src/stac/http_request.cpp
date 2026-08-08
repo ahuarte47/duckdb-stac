@@ -474,18 +474,21 @@ static std::string BuildHttpCacheKey(const std::string &url, const std::string &
 
 	// Sort headers by name to ensure consistent cache key regardless of header order
 
-	std::vector<std::pair<std::string, std::string>> sorted_headers;
-	sorted_headers.reserve(headers.size());
-	for (const auto &entry : headers) {
-		sorted_headers.emplace_back(entry.first, entry.second);
-	}
-	std::sort(sorted_headers.begin(), sorted_headers.end(),
-	          [](const std::pair<std::string, std::string> &a, const std::pair<std::string, std::string> &b) {
-		          return a.first < b.first || (a.first == b.first && a.second < b.second);
-	          });
+	if (headers.size() > 0) {
+		std::vector<std::pair<std::string, std::string>> sorted_headers;
 
-	for (const auto &entry : sorted_headers) {
-		key << entry.first << ':' << entry.second << '\n';
+		sorted_headers.reserve(headers.size());
+		for (const auto &entry : headers) {
+			sorted_headers.emplace_back(entry.first, entry.second);
+		}
+		std::sort(sorted_headers.begin(), sorted_headers.end(),
+		          [](const std::pair<std::string, std::string> &a, const std::pair<std::string, std::string> &b) {
+			          return a.first < b.first || (a.first == b.first && a.second < b.second);
+		          });
+
+		for (const auto &entry : sorted_headers) {
+			key << entry.first << ':' << entry.second << '\n';
+		}
 	}
 
 	return key.str();
