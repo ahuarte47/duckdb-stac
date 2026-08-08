@@ -53,6 +53,11 @@ struct HttpRequest {
 	static HttpResponseData ExecuteHttpRequest(const HttpSettings &settings, const string &url, const string &method,
 	                                           const HttpHeaders &headers, const string &request_body,
 	                                           const string &content_type);
+
+	// Execute HTTP request with given settings, and optional cache TTL in seconds (0 means no caching)
+	static HttpResponseData ExecuteHttpRequest(const HttpSettings &settings, const string &url, const string &method,
+	                                           const HttpHeaders &headers, const string &request_body,
+	                                           const string &content_type, int32_t ttl_seconds);
 };
 
 } // namespace duckdb

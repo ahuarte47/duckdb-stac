@@ -1,5 +1,10 @@
 #include "http_request.hpp"
 
+#include <algorithm>
+#include <chrono>
+#include <mutex>
+#include <unordered_map>
+
 #include "duckdb/common/file_opener.hpp"
 #include "duckdb/common/gzip_file_system.hpp"
 #include "duckdb/common/http_util.hpp"
@@ -438,5 +443,107 @@ HttpResponseData HttpRequest::ExecuteHttpRequest(const HttpSettings &settings, c
 }
 
 #endif // __EMSCRIPTEN__
+
+//======================================================================================================================
+// HttpRequest with cache Implementation
+//======================================================================================================================
+
+//! Cache entry for HTTP responses, used to store responses in memory for a limited time
+struct HttpResponseCacheEntry {
+	HttpResponseData response;
+	std::chrono::steady_clock::time_point created_at;
+};
+
+//! Mutex to protect access to the HTTP request cache
+static std::mutex HTTP_REQUEST_CACHE_LOCK;
+//! In-memory cache for HTTP responses, keyed by a unique cache key derived from the request
+static std::unordered_map<std::string, HttpResponseCacheEntry> HTTP_REQUEST_CACHE;
+//! Maximum number of entries to keep in the HTTP request cache (to prevent unbounded memory growth)
+static constexpr idx_t HTTP_REQUEST_CACHE_MAX_ENTRIES = 64;
+
+//! Returns true if the HTTP method is cacheable (GET or POST)
+static bool IsCacheableHttpMethod(const std::string &method) {
+	return StringUtil::CIEquals(method, "GET") || StringUtil::CIEquals(method, "POST");
+}
+
+//! Build a unique cache key for an HTTP request
+static std::string BuildHttpCacheKey(const std::string &url, const std::string &method, const HttpHeaders &headers,
+                                     const std::string &body, const std::string &content_type) {
+	std::ostringstream key;
+	key << url << '\n' << StringUtil::Upper(method) << '\n' << content_type << '\n' << body << '\n';
+
+	// Sort headers by name to ensure consistent cache key regardless of header order
+
+	std::vector<std::pair<std::string, std::string>> sorted_headers;
+	sorted_headers.reserve(headers.size());
+	for (const auto &entry : headers) {
+		sorted_headers.emplace_back(entry.first, entry.second);
+	}
+	std::sort(sorted_headers.begin(), sorted_headers.end(),
+	          [](const std::pair<std::string, std::string> &a, const std::pair<std::string, std::string> &b) {
+		          return a.first < b.first || (a.first == b.first && a.second < b.second);
+	          });
+
+	for (const auto &entry : sorted_headers) {
+		key << entry.first << ':' << entry.second << '\n';
+	}
+
+	return key.str();
+}
+
+//! Prune expired entries from the HTTP request cache based on the given TTL (time-to-live)
+static void PruneHttpResponseCache(std::chrono::seconds ttl_seconds) {
+	const auto now = std::chrono::steady_clock::now();
+
+	for (auto it = HTTP_REQUEST_CACHE.begin(); it != HTTP_REQUEST_CACHE.end();) {
+		if (now - it->second.created_at > ttl_seconds) {
+			it = HTTP_REQUEST_CACHE.erase(it);
+		} else {
+			++it;
+		}
+	}
+	if (HTTP_REQUEST_CACHE.size() >= HTTP_REQUEST_CACHE_MAX_ENTRIES) {
+		HTTP_REQUEST_CACHE.erase(HTTP_REQUEST_CACHE.begin());
+	}
+}
+
+HttpResponseData HttpRequest::ExecuteHttpRequest(const HttpSettings &settings, const string &url, const string &method,
+                                                 const HttpHeaders &headers, const string &request_body,
+                                                 const string &content_type, int32_t ttl_seconds) {
+	std::string cache_key;
+
+	// Determine if caching should be used
+	const bool use_cache = ttl_seconds > 0 && IsCacheableHttpMethod(method);
+	if (use_cache) {
+		cache_key = BuildHttpCacheKey(url, method, headers, request_body, content_type);
+
+		std::lock_guard<std::mutex> lock(HTTP_REQUEST_CACHE_LOCK);
+
+		auto cached_it = HTTP_REQUEST_CACHE.find(cache_key);
+		if (cached_it != HTTP_REQUEST_CACHE.end()) {
+			const auto now = std::chrono::steady_clock::now();
+
+			if (now - cached_it->second.created_at <= std::chrono::seconds(ttl_seconds)) {
+				return cached_it->second.response;
+			}
+			HTTP_REQUEST_CACHE.erase(cached_it);
+		}
+	}
+
+	HttpResponseData result =
+	    HttpRequest::ExecuteHttpRequest(settings, url, method, headers, request_body, content_type);
+
+	// Store the response in the cache if caching is enabled
+	if (use_cache) {
+		std::lock_guard<std::mutex> lock(HTTP_REQUEST_CACHE_LOCK);
+
+		if (HTTP_REQUEST_CACHE.size() >= HTTP_REQUEST_CACHE_MAX_ENTRIES) {
+			PruneHttpResponseCache(std::chrono::seconds(ttl_seconds));
+		}
+		HTTP_REQUEST_CACHE[cache_key] = {result, std::chrono::steady_clock::now()};
+	}
+
+	return result;
+}
 
 } // namespace duckdb

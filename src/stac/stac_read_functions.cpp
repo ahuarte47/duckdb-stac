@@ -45,12 +45,13 @@ namespace {
 //! Executes an HTTP request and returns the response body as a string.
 static std::string ExecuteHttpRequest(ClientContext &context, const std::string &url, const std::string &method,
                                       const HttpHeaders &headers, const std::string &body,
-                                      const std::string &content_type) {
+                                      const std::string &content_type, int32_t ttl_seconds) {
 	HttpSettings settings;
 	settings = HttpRequest::ExtractHttpSettings(context, url);
 	settings.timeout = 30;
 
-	HttpResponseData response = HttpRequest::ExecuteHttpRequest(settings, url, method, headers, body, content_type);
+	HttpResponseData response =
+	    HttpRequest::ExecuteHttpRequest(settings, url, method, headers, body, content_type, ttl_seconds);
 
 	// Handle the HTTP response and check for errors.
 	if (response.status_code != 200) {
@@ -111,14 +112,14 @@ static std::string ReadContentOfJsonFile(ClientContext &context, MemoryStream &b
 
 //! Reads the content of a JSON catalog and returns it as a string.
 static std::string ReadContentOfCatalog(ClientContext &context, MemoryStream &buffer, const std::string &catalog_path,
-                                        const SearchFilter &filter = SearchFilter()) {
+                                        const SearchFilter &filter, int32_t ttl_seconds) {
 	if (IsStaticCatalog(catalog_path)) {
 		return ReadContentOfJsonFile(context, buffer, catalog_path);
 	} else if (filter.IsEmpty()) {
-		return ExecuteHttpRequest(context, catalog_path, "GET", HttpHeaders(), "", "application/json");
+		return ExecuteHttpRequest(context, catalog_path, "GET", HttpHeaders(), "", "application/json", ttl_seconds);
 	} else {
 		std::string q = filter.AsQueryJson();
-		return ExecuteHttpRequest(context, catalog_path, "POST", HttpHeaders(), q, "application/json");
+		return ExecuteHttpRequest(context, catalog_path, "POST", HttpHeaders(), q, "application/json", ttl_seconds);
 	}
 }
 
@@ -159,7 +160,7 @@ public:
 
 	//! Parses a STAC JSON links array to extract the schema of child STAC items recursively.
 	void ParseSchemaOfJsonLinks(std::string catalog_id, std::string collection_id, yyjson_val *links_val,
-	                            const std::string &links_path) {
+	                            const std::string &links_path, int32_t ttl_seconds) {
 		yyjson_val *temp_val = nullptr;
 		std::size_t links_size = yyjson_arr_size(links_val);
 		yyjson_val *link_val = nullptr;
@@ -206,8 +207,8 @@ public:
 						href = parent_dir.Join(href_path).ToString();
 					}
 
-					std::string href_str = ReadContentOfCatalog(context, buffer, href);
-					ParseSchemaOfJsonObject(catalog_id, collection_id, href_str, href);
+					std::string href_str = ReadContentOfCatalog(context, buffer, href, SearchFilter(), ttl_seconds);
+					ParseSchemaOfJsonObject(catalog_id, collection_id, href_str, href, ttl_seconds);
 				}
 			}
 		}
@@ -215,7 +216,7 @@ public:
 
 	//! Parses a STAC JSON object to extract the schema of child STAC items recursively.
 	void ParseSchemaOfJsonObject(std::string catalog_id, std::string collection_id, yyjson_val *json_val,
-	                             const std::string &json_path) {
+	                             const std::string &json_path, int32_t ttl_seconds) {
 		yyjson_val *temp_val = nullptr;
 		const char *item_type = nullptr;
 
@@ -233,7 +234,7 @@ public:
 				catalog_id = yyjson_get_str(temp_val);
 			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
-				ParseSchemaOfJsonLinks(catalog_id, collection_id, temp_val, json_path);
+				ParseSchemaOfJsonLinks(catalog_id, collection_id, temp_val, json_path, ttl_seconds);
 			}
 			return;
 		}
@@ -242,7 +243,7 @@ public:
 				collection_id = yyjson_get_str(temp_val);
 			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
-				ParseSchemaOfJsonLinks(catalog_id, collection_id, temp_val, json_path);
+				ParseSchemaOfJsonLinks(catalog_id, collection_id, temp_val, json_path, ttl_seconds);
 			}
 			return;
 		}
@@ -254,7 +255,7 @@ public:
 					yyjson_val *feature_val = yyjson_arr_get(temp_val, i);
 
 					if (yyjson_is_obj(feature_val)) {
-						ParseSchemaOfJsonObject(catalog_id, collection_id, feature_val, json_path);
+						ParseSchemaOfJsonObject(catalog_id, collection_id, feature_val, json_path, ttl_seconds);
 						break; // Only need to parse the first feature to extract the schema.
 					}
 				}
@@ -304,7 +305,7 @@ public:
 
 	//! Parses a STAC JSON object to extract the schema of child STAC items recursively.
 	void ParseSchemaOfJsonObject(std::string catalog_id, std::string collection_id, const std::string &json_str,
-	                             const std::string &json_path) {
+	                             const std::string &json_path, int32_t ttl_seconds) {
 		yyjson_doc *json_data = yyjson_read(json_str.c_str(), json_str.size(), YYJSON_READ_NOFLAG);
 		if (!json_data) {
 			throw IOException("Failed to parse data of the object '%s'.", json_path.c_str());
@@ -316,7 +317,7 @@ public:
 				throw IOException("Failed to get the root value of the JSON object '%s'.", json_path.c_str());
 			}
 
-			ParseSchemaOfJsonObject(catalog_id, collection_id, root_val, json_path);
+			ParseSchemaOfJsonObject(catalog_id, collection_id, root_val, json_path, ttl_seconds);
 
 			// Make sure to free the JSON document
 			yyjson_doc_free(json_data);
@@ -396,7 +397,7 @@ public:
 	}
 
 	//! Reads the content of a STAC JSON links array to extract the child STAC items.
-	void ReadContentOfJsonLinks(yyjson_val *links_val, const std::string &links_path) {
+	void ReadContentOfJsonLinks(yyjson_val *links_val, const std::string &links_path, int32_t ttl_seconds) {
 		yyjson_val *temp_val = nullptr;
 		std::size_t links_size = yyjson_arr_size(links_val);
 		yyjson_val *link_val = nullptr;
@@ -488,15 +489,15 @@ public:
 						href = parent_dir.Join(href_path).ToString();
 					}
 
-					std::string href_str = ReadContentOfCatalog(context, buffer, href);
-					ReadContentOfJsonObject(href_str, href);
+					std::string href_str = ReadContentOfCatalog(context, buffer, href, SearchFilter(), ttl_seconds);
+					ReadContentOfJsonObject(href_str, href, ttl_seconds);
 				}
 			}
 		}
 	}
 
 	//! Reads the content of a STAC JSON object to extract the child STAC items.
-	void ReadContentOfJsonObject(yyjson_val *json_val, const std::string &json_path) {
+	void ReadContentOfJsonObject(yyjson_val *json_val, const std::string &json_path, int32_t ttl_seconds) {
 		yyjson_val *temp_val = nullptr;
 		const char *item_type = nullptr;
 
@@ -521,7 +522,7 @@ public:
 				catalog_id = yyjson_get_str(temp_val);
 			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
-				ReadContentOfJsonLinks(temp_val, json_path);
+				ReadContentOfJsonLinks(temp_val, json_path, ttl_seconds);
 			}
 			return;
 		}
@@ -530,7 +531,7 @@ public:
 				collection_id = yyjson_get_str(temp_val);
 			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
-				ReadContentOfJsonLinks(temp_val, json_path);
+				ReadContentOfJsonLinks(temp_val, json_path, ttl_seconds);
 			}
 			return;
 		}
@@ -561,12 +562,12 @@ public:
 					// Parse the child JSON item recursively.
 
 					if (yyjson_is_obj(feature_val)) {
-						ReadContentOfJsonObject(feature_val, json_path);
+						ReadContentOfJsonObject(feature_val, json_path, ttl_seconds);
 					}
 				}
 			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
-				ReadContentOfJsonLinks(temp_val, json_path);
+				ReadContentOfJsonLinks(temp_val, json_path, ttl_seconds);
 			}
 			return;
 		}
@@ -647,9 +648,12 @@ public:
 						// New property? the schema should have been extracted already.
 						auto it = schema.property_set.find(key_str);
 						if (it == schema.property_set.end()) {
-							throw InvalidInputException(
-							    "Property '%s' not found in the schema for the JSON Feature '%s'.", key_str.c_str(),
-							    json_path.c_str());
+							STAC_SCAN_DEBUG_LOG(
+							    3, " > id=(%s): property '%s' not found in the schema for the JSON Feature '%s'.",
+							    row.id.ToString().c_str(), key_str.c_str(), json_path.c_str());
+
+							// Skip properties not found in the schema.
+							continue;
 						} else {
 							key_idx = it->second;
 						}
@@ -679,7 +683,7 @@ public:
 	}
 
 	//! Reads the content of a STAC JSON object to extract the child STAC items.
-	void ReadContentOfJsonObject(const std::string &json_str, const std::string &json_path) {
+	void ReadContentOfJsonObject(const std::string &json_str, const std::string &json_path, int32_t ttl_seconds) {
 		yyjson_doc *json_data = yyjson_read(json_str.c_str(), json_str.size(), YYJSON_READ_NOFLAG);
 		if (!json_data) {
 			throw IOException("Failed to parse data of the JSON object '%s'.", json_path.c_str());
@@ -691,7 +695,7 @@ public:
 				throw IOException("Failed to get the root value of the JSON object '%s'.", json_path.c_str());
 			}
 
-			ReadContentOfJsonObject(root_val, json_path);
+			ReadContentOfJsonObject(root_val, json_path, ttl_seconds);
 
 			// Make sure to free the JSON document
 			yyjson_doc_free(json_data);
@@ -778,8 +782,8 @@ struct STAC_Read {
 		MemoryStream buffer(Allocator::Get(context));
 
 		ItemSchema schema {context, buffer};
-		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path);
-		schema.ParseSchemaOfJsonObject("", "", json_str, catalog_path);
+		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, SearchFilter(), 30);
+		schema.ParseSchemaOfJsonObject("", "", json_str, catalog_path, 30);
 
 		for (const auto &prop_name : schema.column_names) {
 			names.emplace_back(prop_name);
@@ -829,8 +833,8 @@ struct STAC_Read {
 		const FilterContext filter_context(context, filter_expressions, column_ids, column_types);
 
 		ItemReader reader(context, buffer, schema, filter_context, bind_data.row_offset, bind_data.row_limit);
-		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, bind_data.search_filter);
-		reader.ReadContentOfJsonObject(json_str, catalog_path);
+		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, bind_data.search_filter, 30);
+		reader.ReadContentOfJsonObject(json_str, catalog_path, 30);
 
 		// Set the number of items matched by the filter (if any) in the Catalog.
 
@@ -986,8 +990,8 @@ struct STAC_Read {
 
 			STAC_SCAN_DEBUG_LOG(1, "Reading next page: '%s' (body: '%s')...", href.c_str(), body.c_str());
 
-			auto json_str = ExecuteHttpRequest(context, href, method, headers, body, content_type);
-			reader.ReadContentOfJsonObject(json_str, href);
+			auto json_str = ExecuteHttpRequest(context, href, method, headers, body, content_type, 0);
+			reader.ReadContentOfJsonObject(json_str, href, 0);
 
 			for (idx_t i = 0; i < reader.rows.size(); i++, row_idx++) {
 				const auto &item_row = reader.rows[i];
