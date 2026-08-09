@@ -15,6 +15,15 @@ public:
 	Value intersects;
 	int32_t max_items = 0;
 
+	//! Extra STAC API - Filter Extension expression (cql2-json, cql-text).
+	std::string filter;
+	//! Filter language (cql2-json, cql-text), default is "cql2-json".
+	std::string filter_lang = "cql2-json";
+	//! Extra STAC API - Fields Extension expression (json).
+	std::string fields;
+	//! Extra STAC API - SortBy Extension expression (json).
+	std::string sortby;
+
 public:
 	//! Checks if the filter criteria are empty.
 	bool IsEmpty() const;

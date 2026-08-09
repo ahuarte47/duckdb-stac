@@ -54,6 +54,30 @@ static std::string ExecuteHttpRequest(ClientContext &context, const std::string 
 	    HttpRequest::ExecuteHttpRequest(settings, url, method, headers, body, content_type, ttl_seconds);
 
 	// Handle the HTTP response and check for errors.
+	if (response.status_code != 200 && response.content_type == "application/json") {
+		std::string error_msg = response.body;
+
+		yyjson_doc *json_data = yyjson_read(error_msg.c_str(), error_msg.size(), YYJSON_READ_NOFLAG);
+		if (json_data) {
+			yyjson_val *error_val = yyjson_doc_get_root(json_data);
+
+			if (yyjson_is_obj(error_val)) {
+				yyjson_val *detail_val = yyjson_obj_get(error_val, "detail");
+
+				if (yyjson_is_obj(detail_val)) {
+					yyjson_val *message_val = yyjson_obj_get(detail_val, "message");
+
+					if (yyjson_is_str(message_val)) {
+						error_msg = yyjson_get_str(message_val);
+					}
+				}
+			}
+			yyjson_doc_free(json_data);
+		}
+
+		throw IOException("Failed to fetch the Catalog '%s': (%d) %s", url.c_str(), response.status_code,
+		                  error_msg.c_str());
+	}
 	if (response.status_code != 200) {
 		throw IOException("Failed to fetch the Catalog '%s': (%d) %s", url.c_str(), response.status_code,
 		                  response.error.c_str());
@@ -746,7 +770,8 @@ struct STAC_Read {
 	};
 
 	static unique_ptr<FunctionData> Bind(ClientContext &context, TableFunctionBindInput &input,
-	                                     vector<LogicalType> &return_types, vector<string> &names) {
+	                                     vector<LogicalType> &return_types, vector<string> &names,
+	                                     const SearchFilter &search_filter) {
 		D_ASSERT(input.inputs.size() == 1);
 
 		auto catalog_path = input.inputs[0].GetValue<std::string>();
@@ -782,7 +807,7 @@ struct STAC_Read {
 		MemoryStream buffer(Allocator::Get(context));
 
 		ItemSchema schema {context, buffer};
-		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, SearchFilter(), 30);
+		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, search_filter, 30);
 		schema.ParseSchemaOfJsonObject("", "", json_str, catalog_path, 30);
 
 		for (const auto &prop_name : schema.column_names) {
@@ -797,10 +822,16 @@ struct STAC_Read {
 		auto result = make_uniq<BindData>(std::move(schema), std::move(buffer));
 		result->catalog_path = std::move(catalog_path);
 		result->column_types = return_types;
+		result->search_filter = search_filter;
 		result->row_limit = 0;
 		result->row_offset = 0;
 
 		return std::move(result);
+	}
+
+	static unique_ptr<FunctionData> BindRead(ClientContext &context, TableFunctionBindInput &input,
+	                                         vector<LogicalType> &return_types, vector<string> &names) {
+		return Bind(context, input, return_types, names, SearchFilter());
 	}
 
 	//------------------------------------------------------------------------------------------------------------------
@@ -1064,7 +1095,7 @@ struct STAC_Read {
 		tags.insert("ext", "stac");
 		tags.insert("category", "table");
 
-		TableFunction func("STAC_Read", {LogicalType::VARCHAR}, Execute, Bind, Init);
+		TableFunction func("STAC_Read", {LogicalType::VARCHAR}, Execute, BindRead, Init);
 
 		// Enable progress reporting - allows DuckDB to report the progress of the table scan
 		func.table_scan_progress = Progress;
@@ -1099,10 +1130,7 @@ struct STAC_Search : public STAC_Read {
 
 	static unique_ptr<FunctionData> BindSearch(ClientContext &context, TableFunctionBindInput &input,
 	                                           vector<LogicalType> &return_types, vector<string> &names) {
-		auto result = STAC_Read::Bind(context, input, return_types, names);
-		auto &bind_data = result->Cast<BindData>();
-
-		SearchFilter &search_filter = bind_data.search_filter;
+		SearchFilter search_filter;
 
 		// Parse the named parameters for the STAC Search API filter.
 
@@ -1149,12 +1177,32 @@ struct STAC_Search : public STAC_Read {
 			search_filter.intersects = input_param->second;
 		}
 
+		input_param = named_params.find("filter");
+		if (input_param != named_params.end()) {
+			search_filter.filter = StringValue::Get(input_param->second);
+		}
+
+		input_param = named_params.find("filter_lang");
+		if (input_param != named_params.end()) {
+			search_filter.filter_lang = StringValue::Get(input_param->second);
+		}
+
+		input_param = named_params.find("fields");
+		if (input_param != named_params.end()) {
+			search_filter.fields = StringValue::Get(input_param->second);
+		}
+
+		input_param = named_params.find("sortby");
+		if (input_param != named_params.end()) {
+			search_filter.sortby = StringValue::Get(input_param->second);
+		}
+
 		input_param = named_params.find("max_items");
 		if (input_param != named_params.end()) {
 			search_filter.max_items = MaxValue<int32_t>(IntegerValue::Get(input_param->second), 0);
 		}
 
-		return result;
+		return STAC_Read::Bind(context, input, return_types, names, search_filter);
 	}
 
 	//------------------------------------------------------------------------------------------------------------------
@@ -1192,6 +1240,10 @@ struct STAC_Search : public STAC_Read {
 		func.named_parameters["datetime"] = LogicalType::VARCHAR;
 		func.named_parameters["bbox"] = LogicalType::LIST(LogicalType::DOUBLE);
 		func.named_parameters["intersects"] = LogicalType::GEOMETRY("EPSG:4326");
+		func.named_parameters["filter"] = LogicalType::VARCHAR;
+		func.named_parameters["filter_lang"] = LogicalType::VARCHAR;
+		func.named_parameters["fields"] = LogicalType::VARCHAR;
+		func.named_parameters["sortby"] = LogicalType::VARCHAR;
 		func.named_parameters["max_items"] = LogicalType::INTEGER;
 
 		// Enable progress reporting - allows DuckDB to report the progress of the table scan

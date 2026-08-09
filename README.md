@@ -111,6 +111,10 @@ The optional parameters allow filtering by different criteria:
 * `bbox`: A bounding box to filter items by spatial intersection, specified as an array of four floats representing the minimum longitude, minimum latitude, maximum longitude, and maximum latitude.
 * `intersects`: A geometry object (EPSG:4326) to filter items by spatial intersection.
 * `datetime`: A string representing a temporal range to filter the search results, specified in the format "start_datetime/end_datetime" (e.g., "2021-01-01T00:00:00Z/2021-12-31T23:59:59Z").
+* `filter`: A string representing a CQL (Common Query Language) filter to apply to the search results. The endpoint must support the STAC API - Filter Extension (https://github.com/stac-api-extensions/filter) to be effective.
+* `filter_lang`: The language of the filter expression, which can be either "cql2-json" or "cql2-text". Optional, defaults to "cql2-json".
+* `fields`: A string representing a set of fields to include in the search results. The endpoint must support the STAC API - Fields Extension (https://github.com/stac-api-extensions/fields) to be effective.
+* `sortby`: A string representing a set of fields to sort the search results by. The endpoint must support the STAC API - Sort Extension (https://github.com/stac-api-extensions/sort) to be effective.
 * `max_items`: An integer specifying the maximum number of items to return in each result page.
 
 ```sql

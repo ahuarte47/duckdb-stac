@@ -7,7 +7,8 @@
 namespace duckdb {
 
 bool SearchFilter::IsEmpty() const {
-	return collections.empty() && ids.empty() && datetime.empty() && !bbox.HasXY() && intersects.IsNull();
+	return collections.empty() && ids.empty() && datetime.empty() && !bbox.HasXY() && intersects.IsNull() &&
+	       filter.empty() && fields.empty() && sortby.empty() && max_items <= 0;
 }
 
 std::string SearchFilter::AsQueryJson() const {
@@ -69,6 +70,29 @@ std::string SearchFilter::AsQueryJson() const {
 			oss << ", ";
 		}
 		oss << "\"intersects\": " << JsonGeometry::ParseGeometryAsGeoJson(intersects);
+		first_param = false;
+	}
+
+	// Add the extra extension parameters if they are not empty.
+	if (!filter.empty()) {
+		if (!first_param) {
+			oss << ", ";
+		}
+		oss << "\"filter_lang\": \"" << filter_lang << "\", \"filter\": " << filter;
+		first_param = false;
+	}
+	if (!fields.empty()) {
+		if (!first_param) {
+			oss << ", ";
+		}
+		oss << "\"fields\": " << fields;
+		first_param = false;
+	}
+	if (!sortby.empty()) {
+		if (!first_param) {
+			oss << ", ";
+		}
+		oss << "\"sortby\": " << sortby;
 		first_param = false;
 	}
 
