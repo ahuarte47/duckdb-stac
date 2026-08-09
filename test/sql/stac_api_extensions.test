@@ -1,0 +1,227 @@
+# name: test/sql/stac_api_extensions.test
+# description: test stac extension
+# group: [sql]
+
+require stac
+
+query II
+SELECT
+    id, "eo:cloud_cover"
+FROM
+    STAC_Search(
+        'https://stac.dataspace.copernicus.eu/v1/search',
+        collections := ['sentinel-2-l2a'],
+        filter := '{
+          "op": "and",
+          "args": [
+            {
+              "op": ">=",
+              "args": [ { "property": "datetime" }, { "timestamp": "2021-09-30T00:00:00Z" } ]
+            },
+            {
+              "op": "<=",
+              "args": [ { "property": "datetime" }, { "timestamp": "2021-10-01T00:00:00Z" } ]
+            },
+            {
+              "op": "s_intersects",
+              "args": [
+                {
+                  "property": "geometry"
+                },
+                {
+                  "type": "Polygon",
+                  "coordinates": [
+                    [
+                      [-1.695007724869786,42.788757186108654],
+                      [-1.604482013650674,42.788757186108654],
+                      [-1.604482013650674,42.842441501962270],
+                      [-1.695007724869786,42.842441501962270],
+                      [-1.695007724869786,42.788757186108654]
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        }'
+    )
+ORDER BY
+    id
+;
+----
+S2B_MSIL2A_20210930T105749_N0500_R094_T30TWN_20230119T154537	22.61
+S2B_MSIL2A_20210930T105749_N0500_R094_T30TXN_20230119T154537	13.33
+
+query II
+SELECT
+    id, "eo:cloud_cover"
+FROM
+    STAC_Search(
+        'https://stac.dataspace.copernicus.eu/v1/search',
+        collections := ['sentinel-2-l2a'],
+        filter := '{
+          "op": "and",
+          "args": [
+            {
+              "op": ">=",
+              "args": [ { "property": "datetime" }, { "timestamp": "2021-09-30T00:00:00Z" } ]
+            },
+            {
+              "op": "<=",
+              "args": [ { "property": "datetime" }, { "timestamp": "2021-10-01T00:00:00Z" } ]
+            },
+            {
+              "op": "<=",
+              "args": [ { "property": "eo:cloud_cover" }, 15.0 ]
+            },
+            {
+              "op": "s_intersects",
+              "args": [
+                {
+                  "property": "geometry"
+                },
+                {
+                  "type": "Polygon",
+                  "coordinates": [
+                    [
+                      [-1.695007724869786,42.788757186108654],
+                      [-1.604482013650674,42.788757186108654],
+                      [-1.604482013650674,42.842441501962270],
+                      [-1.695007724869786,42.842441501962270],
+                      [-1.695007724869786,42.788757186108654]
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        }'
+    )
+ORDER BY
+    id
+;
+----
+S2B_MSIL2A_20210930T105749_N0500_R094_T30TXN_20230119T154537	13.33
+
+query IIIIII
+SELECT
+    *
+FROM
+    (
+        DESCRIBE SELECT
+            *
+        FROM
+            STAC_Search(
+                'https://stac.dataspace.copernicus.eu/v1/search',
+                collections := ['sentinel-2-l2a'],
+                filter := '{
+                  "op": "and",
+                  "args": [
+                    {
+                      "op": ">=",
+                      "args": [ { "property": "datetime" }, { "timestamp": "2021-09-30T00:00:00Z" } ]
+                    },
+                    {
+                      "op": "<=",
+                      "args": [ { "property": "datetime" }, { "timestamp": "2021-10-01T00:00:00Z" } ]
+                    },
+                    {
+                      "op": "s_intersects",
+                      "args": [
+                        {
+                          "property": "geometry"
+                        },
+                        {
+                          "type": "Polygon",
+                          "coordinates": [
+                            [
+                              [-1.695007724869786,42.788757186108654],
+                              [-1.604482013650674,42.788757186108654],
+                              [-1.604482013650674,42.842441501962270],
+                              [-1.695007724869786,42.842441501962270],
+                              [-1.695007724869786,42.788757186108654]
+                            ]
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }',
+                fields := '{
+                  "include": ["type", "id", "geometry", "bbox", "stac_extensions", "links", "assets", "properties.datetime", "properties.eo:cloud_cover"],
+                  "exclude": null
+                }',
+                sortby := '[
+                  {
+                    "field": "properties.eo:cloud_cover",
+                    "direction": "asc"
+                  }
+                ]'
+            )
+    ) AS describe_result
+ORDER BY
+    column_name
+;
+----
+assets	MAP(VARCHAR, STAC_ASSET)	YES	NULL	NULL	NULL
+bbox	STAC_BBOX	YES	NULL	NULL	NULL
+catalog	VARCHAR	YES	NULL	NULL	NULL
+collection	VARCHAR	YES	NULL	NULL	NULL
+datetime	VARCHAR	YES	NULL	NULL	NULL
+eo:cloud_cover	DOUBLE	YES	NULL	NULL	NULL
+geometry	GEOMETRY('EPSG:4326')	YES	NULL	NULL	NULL
+id	VARCHAR	YES	NULL	NULL	NULL
+links	STAC_LINK[]	YES	NULL	NULL	NULL
+stac_extensions	VARCHAR[]	YES	NULL	NULL	NULL
+
+query II
+SELECT
+    id, "eo:cloud_cover"
+FROM
+    STAC_Search(
+        'https://stac.dataspace.copernicus.eu/v1/search',
+        collections := ['sentinel-2-l2a'],
+        filter := '{
+          "op": "and",
+          "args": [
+            {
+              "op": ">=",
+              "args": [ { "property": "datetime" }, { "timestamp": "2021-09-30T00:00:00Z" } ]
+            },
+            {
+              "op": "<=",
+              "args": [ { "property": "datetime" }, { "timestamp": "2021-10-01T00:00:00Z" } ]
+            },
+            {
+              "op": "s_intersects",
+              "args": [
+                {
+                  "property": "geometry"
+                },
+                {
+                  "type": "Polygon",
+                  "coordinates": [
+                    [
+                      [-1.695007724869786,42.788757186108654],
+                      [-1.604482013650674,42.788757186108654],
+                      [-1.604482013650674,42.842441501962270],
+                      [-1.695007724869786,42.842441501962270],
+                      [-1.695007724869786,42.788757186108654]
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        }',
+        sortby := '[
+          {
+            "field": "properties.eo:cloud_cover",
+            "direction": "asc"
+          }
+        ]'
+    )
+;
+----
+S2B_MSIL2A_20210930T105749_N0500_R094_T30TXN_20230119T154537	13.33
+S2B_MSIL2A_20210930T105749_N0500_R094_T30TWN_20230119T154537	22.61

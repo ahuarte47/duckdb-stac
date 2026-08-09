@@ -73,7 +73,7 @@ The optional parameters allow filtering by different criteria:
 * `bbox`: A bounding box to filter items by spatial intersection, specified as an array of four floats representing the minimum longitude, minimum latitude, maximum longitude, and maximum latitude.
 * `intersects`: A geometry object (EPSG:4326) to filter items by spatial intersection.
 * `datetime`: A string representing a temporal range to filter the search results, specified in the format "start_datetime/end_datetime" (e.g., "2021-01-01T00:00:00Z/2021-12-31T23:59:59Z").
-* `filter`: A string representing a CQL (Common Query Language) filter to apply to the search results. The endpoint must support the STAC API - Filter Extension (https://github.com/stac-api-extensions/filter) for this parameter to be effective.
+* `filter`: A string representing a CQL (Common Query Language) filter to apply to the search results. The endpoint must support the STAC API - Filter Extension (https://github.com/stac-api-extensions/filter) to be effective.
 * `filter_lang`: The language of the filter expression, which can be either "cql2-json" or "cql2-text". Optional, defaults to "cql2-json".
 * `fields`: A string representing a set of fields to include in the search results. The endpoint must support the STAC API - Fields Extension (https://github.com/stac-api-extensions/fields) to be effective.
 * `sortby`: A string representing a set of fields to sort the search results by. The endpoint must support the STAC API - Sort Extension (https://github.com/stac-api-extensions/sort) to be effective.
@@ -97,6 +97,53 @@ FROM
         collections := ['sentinel-s2-l2a-cogs'],
         datetime := '2021-09-30/2021-10-30',
         intersects := ST_MakeEnvelope(-1.695007724869786, 42.788757186108654, -1.604482013650674, 42.84244150196227)::GEOMETRY('EPSG::4326')
+    )
+;
+```
+
+If STAC API - Filter Extension is supported by the endpoint, you could use a CQL2-JSON filter to filter the search results:
+
+```sql
+SELECT
+    *
+FROM
+    STAC_Search(
+        'https://stac.dataspace.copernicus.eu/v1/search',
+        collections := ['sentinel-2-l2a'],
+        filter_lang := 'cql2-json',
+        filter := '{
+          "op": "and",
+          "args": [
+            {
+              "op": ">=",
+              "args": [ { "property": "datetime" }, { "timestamp": "2021-09-30T00:00:00Z" } ]
+            },
+            {
+              "op": "<=",
+              "args": [ { "property": "datetime" }, { "timestamp": "2021-10-01T00:00:00Z" } ]
+            },
+            {
+              "op": "s_intersects",
+              "args": [
+                {
+                  "property": "geometry"
+                },
+                {
+                  "type": "Polygon",
+                  "coordinates": [
+                    [
+                      [-1.695007724869786,42.788757186108654],
+                      [-1.604482013650674,42.788757186108654],
+                      [-1.604482013650674,42.842441501962270],
+                      [-1.695007724869786,42.842441501962270],
+                      [-1.695007724869786,42.788757186108654]
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        }'
     )
 ;
 ```

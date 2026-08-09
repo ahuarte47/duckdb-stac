@@ -159,6 +159,9 @@ private:
 	//! The buffer used to read JSON content.
 	MemoryStream &buffer;
 
+	//! Total number of items matched by the filter (if any) in the Catalog.
+	int number_matched = -1;
+
 public:
 	//! The set of type names (A type is represented by the join of a catalog and collection identifiers).
 	std::set<std::string> itemtype_set;
@@ -180,6 +183,11 @@ public:
 		property_set.clear();
 		column_names.clear();
 		column_types.clear();
+	}
+
+	//! Returns the total number of items matched by the filter (if any) in the Catalog.
+	int GetNumberMatched() const {
+		return number_matched;
 	}
 
 	//! Parses a STAC JSON links array to extract the schema of child STAC items recursively.
@@ -272,6 +280,9 @@ public:
 			return;
 		}
 		if (strcmp(item_type, "FeatureCollection") == 0) {
+			if (yyjson_is_int(temp_val = yyjson_obj_get(json_val, "numberMatched"))) {
+				number_matched = yyjson_get_int(temp_val);
+			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "features"))) {
 				std::size_t features_size = yyjson_arr_size(temp_val);
 
@@ -380,7 +391,7 @@ private:
 	std::size_t row_limit = 0;
 	//! Total number of rows read so far by the ItemReader.
 	std::size_t row_count = 0;
-	// Total number of items matched by the filter (if any) in the Catalog.
+	//! Total number of items matched by the filter (if any) in the Catalog.
 	int number_matched = -1;
 
 public:
@@ -692,7 +703,7 @@ public:
 
 			// The filter expressions were evaluated but item does not match the conditions?
 			if (!FilterEval::Eval(row, filter_context)) {
-				STAC_SCAN_DEBUG_LOG(3, " > id=(%s): item did not match filter conditions, skipped",
+				STAC_SCAN_DEBUG_LOG(1, " > id=(%s): item did not match filter conditions, skipped",
 				                    row.id.ToString().c_str());
 				return;
 			}
@@ -823,6 +834,7 @@ struct STAC_Read {
 		result->catalog_path = std::move(catalog_path);
 		result->column_types = return_types;
 		result->search_filter = search_filter;
+		result->number_matched = schema.GetNumberMatched();
 		result->row_limit = 0;
 		result->row_offset = 0;
 
@@ -869,7 +881,9 @@ struct STAC_Read {
 
 		// Set the number of items matched by the filter (if any) in the Catalog.
 
-		bind_data.number_matched = reader.GetNumberMatched();
+		if (bind_data.number_matched == -1) {
+			bind_data.number_matched = reader.GetNumberMatched();
+		}
 
 		STAC_SCAN_DEBUG_LOG(1, "Request matched %d items", bind_data.number_matched);
 

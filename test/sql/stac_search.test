@@ -79,3 +79,16 @@ ORDER BY
 ----
 S2B_30TWN_20210930_0_L2A
 S2B_30TXN_20210930_0_L2A
+
+statement error
+SELECT
+    id
+FROM
+    STAC_Search(
+        'https://stac.dataspace.copernicus.eu/v1/search'
+    )
+ORDER BY
+    id
+;
+----
+Failed to fetch the Catalog 'https://stac.dataspace.copernicus.eu/v1/search': (400) Search requests require at least one collection. Please provide the 'collections' parameter.

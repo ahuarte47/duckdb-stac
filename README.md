@@ -181,6 +181,53 @@ WHERE
 ;
 ```
 
+If STAC API - Filter Extension is supported by the endpoint, you could use a CQL2-JSON filter to filter the search results:
+
+```sql
+SELECT
+    *
+FROM
+    STAC_Search(
+        'https://stac.dataspace.copernicus.eu/v1/search',
+        collections := ['sentinel-2-l2a'],
+        filter_lang := 'cql2-json',
+        filter := '{
+          "op": "and",
+          "args": [
+            {
+              "op": ">=",
+              "args": [ { "property": "datetime" }, { "timestamp": "2021-09-30T00:00:00Z" } ]
+            },
+            {
+              "op": "<=",
+              "args": [ { "property": "datetime" }, { "timestamp": "2021-10-01T00:00:00Z" } ]
+            },
+            {
+              "op": "s_intersects",
+              "args": [
+                {
+                  "property": "geometry"
+                },
+                {
+                  "type": "Polygon",
+                  "coordinates": [
+                    [
+                      [-1.695007724869786,42.788757186108654],
+                      [-1.604482013650674,42.788757186108654],
+                      [-1.604482013650674,42.842441501962270],
+                      [-1.695007724869786,42.842441501962270],
+                      [-1.695007724869786,42.788757186108654]
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        }'
+    )
+;
+```
+
 For the full function reference and all available options, see [docs/functions.md](docs/functions.md).
 
 ## TODO
