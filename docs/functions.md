@@ -65,18 +65,13 @@ STAC_Search (url VARCHAR,
 Searches the content of a SpatioTemporal Asset Catalog (STAC) catalog based on the given STAC API - Item Search
 filtering criteria (https://api.stacspec.org/v1.0.0/item-search/) and returns matching items as a table.
 
-The `url` parameter specifies the base URL of the STAC API - Item Search endpoint to query.
-The optional parameters allow filtering by different criteria:
+The first mandatory `url` parameter specifies the base URL of the STAC API - Item Search endpoint to query, the other optional parameters allow filtering by different criteria:
 
 * `collections`: A list of collection IDs to filter the search results.
 * `ids`: A list of item IDs to filter the search results.
 * `bbox`: A bounding box to filter items by spatial intersection, specified as an array of four floats representing the minimum longitude, minimum latitude, maximum longitude, and maximum latitude.
 * `intersects`: A geometry object (EPSG:4326) to filter items by spatial intersection.
 * `datetime`: A string representing a temporal range to filter the search results, specified in the format "start_datetime/end_datetime" (e.g., "2021-01-01T00:00:00Z/2021-12-31T23:59:59Z").
-* `filter`: A string representing a CQL (Common Query Language) filter to apply to the search results. The endpoint must support the STAC API - Filter Extension (https://github.com/stac-api-extensions/filter) to be effective.
-* `filter_lang`: The language of the filter expression, which can be either "cql2-json" or "cql2-text". Optional, defaults to "cql2-json".
-* `fields`: A string representing a set of fields to include in the search results. The endpoint must support the STAC API - Fields Extension (https://github.com/stac-api-extensions/fields) to be effective.
-* `sortby`: A string representing a set of fields to sort the search results by. The endpoint must support the STAC API - Sort Extension (https://github.com/stac-api-extensions/sort) to be effective.
 * `max_items`: An integer specifying the maximum number of items to return in each result page.
 
 This function exposes a STAC catalog as a relational table, following the
@@ -100,6 +95,13 @@ FROM
     )
 ;
 ```
+
+And more optional parameters are available to support several STAC API extensions:
+
+* `filter`: A string representing a CQL (Common Query Language) filter to apply to the search results. The endpoint must support the STAC API - Filter Extension (https://github.com/stac-api-extensions/filter) to be effective.
+* `filter_lang`: The language of the filter expression, which can be either "cql2-json" or "cql2-text". Optional, defaults to "cql2-json".
+* `fields`: A string representing a set of fields to include in the search results. The endpoint must support the STAC API - Fields Extension (https://github.com/stac-api-extensions/fields) to be effective.
+* `sortby`: A string representing a set of fields to sort the search results by. The endpoint must support the STAC API - Sort Extension (https://github.com/stac-api-extensions/sort) to be effective.
 
 If STAC API - Filter Extension is supported by the endpoint, you could use a CQL2-JSON filter to filter the search results:
 
