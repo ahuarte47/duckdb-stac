@@ -72,7 +72,7 @@ The first mandatory `url` parameter specifies the base URL of the STAC API - Ite
 * `bbox`: A bounding box to filter items by spatial intersection, specified as an array of four floats representing the minimum longitude, minimum latitude, maximum longitude, and maximum latitude.
 * `intersects`: A geometry object (EPSG:4326) to filter items by spatial intersection.
 * `datetime`: A string representing a temporal range to filter the search results, specified in the format "start_datetime/end_datetime" (e.g., "2021-01-01T00:00:00Z/2021-12-31T23:59:59Z").
-* `max_items`: An integer specifying the maximum number of items to return in each result page.
+* `max_items`: An integer specifying the maximum number of items to return in each result page. **Higher** values may result in **faster** response times. The default is 10, and the maximum is usually 1000.
 
 This function exposes a STAC catalog as a relational table, following the
 [GeoParquet STAC specification](https://radiantearth.github.io/stac-geoparquet-spec/latest/).
