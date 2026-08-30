@@ -771,7 +771,7 @@ struct STAC_Read {
 		SearchFilter search_filter;
 
 		// Optional pushdown filter expressions for the STAC items.
-		vector<std::unique_ptr<Expression>> filter_expressions;
+		vector<unique_ptr<Expression>> filter_expressions;
 		// All column types for the output of the table function, including dynamic fields.
 		vector<LogicalType> column_types;
 
@@ -861,6 +861,28 @@ struct STAC_Read {
 		// input.column_ids is guaranteed to match output.data.size() in Execute.
 		auto &bind_data = const_cast<BindData &>(input.bind_data->Cast<BindData>());
 		bind_data.column_ids = input.column_ids;
+
+		// The filter expressions built in PushdownComplexFilter reference columns by their absolute table
+		// column index (since the final projection wasn't known yet at that point). Remap them now to the
+		// position within the final projected column list, since that is what FilterEval's input DataChunk
+		// is built with (see filter_eval.cpp).
+		if (!bind_data.filter_expressions.empty()) {
+			unordered_map<idx_t, idx_t> table_col_to_position;
+
+			for (idx_t i = 0; i < bind_data.column_ids.size(); i++) {
+				table_col_to_position[bind_data.column_ids[i]] = i;
+			}
+			for (auto &expr : bind_data.filter_expressions) {
+				ExpressionIterator::VisitExpressionMutable<BoundReferenceExpression>(
+				    expr, [&table_col_to_position](BoundReferenceExpression &bound_ref, unique_ptr<Expression> &) {
+					    const auto entry = table_col_to_position.find(bound_ref.index);
+					    if (entry == table_col_to_position.end()) {
+						    throw InternalException("STAC_Read: filter column was pruned from the projected columns");
+					    }
+					    bound_ref.index = entry->second;
+				    });
+			}
+		}
 
 		// Read the first page of the Catalog content.
 
@@ -966,26 +988,36 @@ struct STAC_Read {
 
 		// Catch filter expressions for early evaluation during scanning if possible.
 		if (!expressions.empty()) {
-			vector<std::unique_ptr<Expression>> temp_expressions;
+			const auto &column_ids = get.GetColumnIds();
+			vector<unique_ptr<Expression>> temp_expressions;
 
 			for (const auto &expr : expressions) {
 				auto expr_copy = expr->Copy();
 
 				// We need to convert the column references in the filter expressions from BoundColumnRefExpression
 				// to BoundReferenceExpression, so that one ExpressionExecutor can execute them during scanning.
+				// The index is temporarily set to the *absolute* table column index (rather than the position
+				// within the current projection), because projection pushdown (which can add/remove/reorder
+				// columns, e.g. for `count(*)` queries) runs after this callback. Init() remaps these indices to
+				// the final projected column positions once bind_data.column_ids is known.
 				ExpressionIterator::VisitExpressionClassMutable(
-				    expr_copy, ExpressionClass::BOUND_COLUMN_REF, [](unique_ptr<Expression> &child) {
+				    expr_copy, ExpressionClass::BOUND_COLUMN_REF, [&column_ids](unique_ptr<Expression> &child) {
 					    const auto &col_ref = child->Cast<BoundColumnRefExpression>();
 					    const auto &column_alias = col_ref.GetAlias();
-					    const auto &column_index = col_ref.binding.column_index;
 					    const auto &return_type = col_ref.return_type;
-					    child = make_uniq<BoundReferenceExpression>(column_alias, return_type, column_index);
+					    const idx_t table_col = column_ids[col_ref.binding.column_index].GetPrimaryIndex();
+					    child = make_uniq<BoundReferenceExpression>(column_alias, return_type, table_col);
 				    });
 
 				temp_expressions.push_back(std::move(expr_copy));
 			}
 			bind_data.filter_expressions = std::move(temp_expressions);
-			expressions.clear();
+
+			// Do NOT clear 'expressions' here: keeping the filter in the logical plan ensures the referenced
+			// columns stay 'used' for the projection-pushdown optimizer (otherwise columns only needed by the
+			// filter, but not by the query's output, e.g. count(*), get pruned from the scan's column set).
+			// DuckDB will still apply the filter on top of the scan; the copy above is only an optimization to
+			// skip non-matching rows early during scanning.
 		}
 	}
 
