@@ -30,3 +30,14 @@ LIMIT
 ----
 sentinel2_l2a
 sentinel2_l2a
+
+query I
+SELECT
+    count(*)
+FROM
+    STAC_Read('https://earth-search.aws.element84.com/v1/search?collections=sentinel-2-l2a&bbox=12,41.5,12.7,42&datetime=2024-06-01T00:00:00Z/2024-06-03T00:00:00Z&limit=50')
+WHERE
+    "eo:cloud_cover" > 10
+;
+----
+1
