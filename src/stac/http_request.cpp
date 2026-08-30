@@ -225,6 +225,8 @@ HttpSettings HttpRequest::ExtractHttpSettings(ClientContext &context, const stri
 	settings.proxy_password = Settings::Get<HTTPProxyPasswordSetting>(context);
 
 	KeyValueSecretReader secret_reader(opener, &info, "http");
+
+	// Check for proxy settings in the secrets
 	string proxy_from_secret;
 	if (secret_reader.TryGetSecretKey<string>("http_proxy", proxy_from_secret) && !proxy_from_secret.empty()) {
 		settings.proxy = proxy_from_secret;
@@ -236,6 +238,20 @@ HttpSettings HttpRequest::ExtractHttpSettings(ClientContext &context, const stri
 	string proxy_password;
 	if (secret_reader.TryGetSecretKey<string>("http_proxy_password", proxy_password) && !proxy_password.empty()) {
 		settings.proxy_password = proxy_password;
+	}
+
+	// Check for authentication settings in the secrets
+	string basic_auth_username;
+	if (secret_reader.TryGetSecretKey<string>("username", basic_auth_username) && !basic_auth_username.empty()) {
+		settings.basic_auth.username = basic_auth_username;
+	}
+	string basic_auth_password;
+	if (secret_reader.TryGetSecretKey<string>("password", basic_auth_password) && !basic_auth_password.empty()) {
+		settings.basic_auth.password = basic_auth_password;
+	}
+	string bearer_token;
+	if (secret_reader.TryGetSecretKey<string>("bearer_token", bearer_token) && !bearer_token.empty()) {
+		settings.bearer_token_auth.token = bearer_token;
 	}
 
 	// Check for custom user agent setting, otherwise use default
@@ -359,6 +375,14 @@ HttpResponseData HttpRequest::ExecuteHttpRequest(const HttpSettings &settings, c
 			if (!settings.proxy_username.empty()) {
 				client.set_proxy_basic_auth(settings.proxy_username, settings.proxy_password);
 			}
+		}
+
+		if (!settings.basic_auth.username.empty() && !settings.basic_auth.password.empty()) {
+			client.set_basic_auth(settings.basic_auth.username, settings.basic_auth.password);
+		}
+
+		if (!settings.bearer_token_auth.token.empty()) {
+			client.set_bearer_token_auth(settings.bearer_token_auth.token);
 		}
 
 		duckdb_httplib_openssl::Headers req_headers;

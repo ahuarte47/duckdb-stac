@@ -1,6 +1,11 @@
 Release history
 ---------------
 
+0.2.2
+++++++++++++++++++
+
+- Add support for basic & bearer authentication via secrets (TYPE http).
+
 0.2.1
 ++++++++++++++++++
 
