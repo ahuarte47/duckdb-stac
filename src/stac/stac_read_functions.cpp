@@ -640,6 +640,14 @@ public:
 				throw InvalidInputException("Missing 'bbox' field in the JSON Feature '%s'.", json_path.c_str());
 			}
 
+			// Extract stac_version
+			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "stac_version"))) {
+				row.version = Value(yyjson_get_str(temp_val));
+			} else {
+				throw InvalidInputException("Missing 'stac_version' field in the JSON Feature '%s'.",
+				                            json_path.c_str());
+			}
+
 			// Extract stac_extensions
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "stac_extensions"))) {
 				row.extensions = JsonObject::ParseExtensionsObject(temp_val);
@@ -804,6 +812,8 @@ struct STAC_Read {
 		return_types.push_back(LogicalType::GEOMETRY(crs));
 		names.emplace_back("bbox");
 		return_types.push_back(STACTypes::BBOX());
+		names.emplace_back("stac_version");
+		return_types.push_back(LogicalType::VARCHAR);
 		names.emplace_back("stac_extensions");
 		return_types.push_back(LogicalType::LIST(LogicalType::VARCHAR));
 		names.emplace_back("links");

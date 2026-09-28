@@ -27,16 +27,17 @@ GetDebugLevel() {
 
 namespace duckdb {
 
-//! Column indices for the implicit columns of the STAC data table function.
-#define STAC_CATALOG_COLUMN_INDEX        0
-#define STAC_COLLECTION_COLUMN_INDEX     1
-#define STAC_ID_COLUMN_INDEX             2
-#define STAC_GEOMETRY_COLUMN_INDEX       3
-#define STAC_BBOX_COLUMN_INDEX           4
-#define STAC_EXTENSIONS_COLUMN_INDEX     5
-#define STAC_LINKS_COLUMN_INDEX          6
-#define STAC_ASSETS_COLUMN_INDEX         7
-#define STAC_FIRST_PROPERTY_COLUMN_INDEX 8
+//! Column indices for the implicit columns of the STAC item table function.
+#define STAC_ITEM_CATALOG_COLUMN_INDEX        0
+#define STAC_ITEM_COLLECTION_COLUMN_INDEX     1
+#define STAC_ITEM_ID_COLUMN_INDEX             2
+#define STAC_ITEM_GEOMETRY_COLUMN_INDEX       3
+#define STAC_ITEM_BBOX_COLUMN_INDEX           4
+#define STAC_ITEM_VERSION_COLUMN_INDEX        5
+#define STAC_ITEM_EXTENSIONS_COLUMN_INDEX     6
+#define STAC_ITEM_LINKS_COLUMN_INDEX          7
+#define STAC_ITEM_ASSETS_COLUMN_INDEX         8
+#define STAC_ITEM_FIRST_PROPERTY_COLUMN_INDEX 9
 
 //! Represents a single STAC item row in the result table.
 struct ItemRow {
@@ -50,6 +51,7 @@ public:
 	duckdb::Value id;
 	duckdb::Value geometry;
 	duckdb::Value bbox;
+	duckdb::Value version;
 	duckdb::Value extensions;
 	duckdb::Value links;
 	duckdb::Value assets;
