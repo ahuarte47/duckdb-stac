@@ -1,5 +1,7 @@
 #include "stac_types.hpp"
+#include "stac_reader.hpp"
 #include "stac_read_functions.hpp"
+#include "stac_schema.hpp"
 #include "function_builder.hpp"
 #include <cinttypes>
 #include <string>
@@ -29,7 +31,6 @@ using namespace duckdb_yyjson; // NOLINT
 
 // STAC
 #include "filter_eval.hpp"
-#include "http_request.hpp"
 #include "json_geometry.hpp"
 #include "json_object.hpp"
 #include "search_filter.hpp"
@@ -39,500 +40,44 @@ namespace duckdb {
 namespace {
 
 //======================================================================================================================
-// Utility types and functions
+// STAC Item Reader
 //======================================================================================================================
 
-//! Executes an HTTP request and returns the response body as a string.
-static std::string ExecuteHttpRequest(ClientContext &context, const std::string &url, const std::string &method,
-                                      const HttpHeaders &headers, const std::string &body,
-                                      const std::string &content_type, int32_t ttl_seconds) {
-	HttpSettings settings;
-	settings = HttpRequest::ExtractHttpSettings(context, url);
-	settings.timeout = 30;
-
-	HttpResponseData response =
-	    HttpRequest::ExecuteHttpRequest(settings, url, method, headers, body, content_type, ttl_seconds);
-
-	// Handle the HTTP response and check for errors.
-	if (response.status_code != 200 && response.content_type == "application/json") {
-		std::string error_msg = response.body;
-
-		yyjson_doc *json_data = yyjson_read(error_msg.c_str(), error_msg.size(), YYJSON_READ_NOFLAG);
-		if (json_data) {
-			yyjson_val *error_val = yyjson_doc_get_root(json_data);
-
-			if (yyjson_is_obj(error_val)) {
-				yyjson_val *detail_val = yyjson_obj_get(error_val, "detail");
-
-				if (yyjson_is_obj(detail_val)) {
-					yyjson_val *message_val = yyjson_obj_get(detail_val, "message");
-
-					if (yyjson_is_str(message_val)) {
-						error_msg = yyjson_get_str(message_val);
-					}
-				}
-			}
-			yyjson_doc_free(json_data);
-		}
-
-		throw IOException("Failed to fetch the Catalog '%s': (%d) %s", url.c_str(), response.status_code,
-		                  error_msg.c_str());
-	}
-	if (response.status_code != 200) {
-		throw IOException("Failed to fetch the Catalog '%s': (%d) %s", url.c_str(), response.status_code,
-		                  response.error.c_str());
-	}
-	if (!response.error.empty()) {
-		throw IOException(response.error);
-	}
-	return response.body;
-}
-
-//! Determines whether the given catalog path is a static STAC Catalog (JSON file) or a dynamic STAC Catalog (URL).
-static bool IsStaticCatalog(const std::string &catalog_path) {
-	std::string l_path = StringUtil::Lower(catalog_path);
-	return StringUtil::EndsWith(l_path, ".json") || StringUtil::EndsWith(l_path, ".geojson");
-}
-
-//! Reads the content of a JSON file and returns it as a string.
-static std::string ReadContentOfJsonFile(ClientContext &context, MemoryStream &buffer, const std::string &file_path) {
-	OpenFileInfo file(file_path);
-
-	auto &fs = FileSystem::GetFileSystem(context);
-	auto handle = fs.OpenFile(file, FileFlags::FILE_FLAGS_READ);
-	if (!handle) {
-		throw IOException("Failed to open the file '%s'.", file_path.c_str());
-	}
-
-	uint64_t file_size = handle->GetFileSize();
-
-	if (file_size == 0) {
-		buffer.SetPosition(0);
-		buffer.GrowCapacity(2048);
-
-		const char *buffer_ptr = reinterpret_cast<const char *>(buffer.GetData());
-		std::ostringstream oss;
-
-		int64_t bytes_read = 0;
-		while ((bytes_read = handle->Read(QueryContext(), buffer.GetData(), 2048)) > 0) {
-			oss.write(buffer_ptr, bytes_read);
-		}
-
-		std::string json_str = oss.str();
-		handle.reset();
-		return json_str;
-	} else {
-		buffer.SetPosition(0);
-		buffer.GrowCapacity(file_size);
-
-		const char *buffer_ptr = reinterpret_cast<const char *>(buffer.GetData());
-		int64_t bytes_read = handle->Read(QueryContext(), buffer.GetData(), file_size);
-
-		std::string json_str = std::string(buffer_ptr, bytes_read);
-		handle.reset();
-		return json_str;
-	}
-}
-
-//! Reads the content of a JSON catalog and returns it as a string.
-static std::string ReadContentOfCatalog(ClientContext &context, MemoryStream &buffer, const std::string &catalog_path,
-                                        const SearchFilter &filter, int32_t ttl_seconds) {
-	if (IsStaticCatalog(catalog_path)) {
-		return ReadContentOfJsonFile(context, buffer, catalog_path);
-	} else if (filter.IsEmpty()) {
-		return ExecuteHttpRequest(context, catalog_path, "GET", HttpHeaders(), "", "application/json", ttl_seconds);
-	} else {
-		std::string q = filter.AsQueryJson();
-		return ExecuteHttpRequest(context, catalog_path, "POST", HttpHeaders(), q, "application/json", ttl_seconds);
-	}
-}
-
-//======================================================================================================================
-// STAC Schema definitions
-//======================================================================================================================
-
-//! Manages the schema definition of a set of STAC Items in a Catalog.
-class ItemSchema {
-private:
-	//! The client context for the current query execution.
-	ClientContext &context;
-	//! The buffer used to read JSON content.
-	MemoryStream &buffer;
-
-	//! Total number of items matched by the filter (if any) in the Catalog.
-	int number_matched = -1;
-
+//! Reads the set items contained in a STAC Catalog.
+class ItemReader : public STACReader {
 public:
-	//! The set of type names (A type is represented by the join of a catalog and collection identifiers).
-	std::set<std::string> itemtype_set;
-	//! The set of property names (Set of properties and their corresponding index in the column vector).
-	std::map<std::string, int16_t> property_set;
-	//! All the column names of the Catalog and its child Catalogs.
-	std::vector<std::string> column_names;
-	//! All the column types of the Catalog and its child Catalogs.
-	std::vector<LogicalType> column_types;
+	using STACReader::ReadContentOfObject;
 
-public:
-	//! Constructor for the ItemSchema class.
-	ItemSchema(ClientContext &context, MemoryStream &buffer) : context(context), buffer(buffer) {
+	ItemReader(ClientContext &context, MemoryStream &buffer, const ItemSchema &schema,
+	           const FilterContext &filter_context, idx_t row_offset = 0, std::size_t row_limit = 0)
+	    : STACReader(context, buffer, row_offset, row_limit), filter_context(filter_context), schema(schema) {
 	}
 
-	//! Clears the definition of the schema.
-	void Clear() {
-		itemtype_set.clear();
-		property_set.clear();
-		column_names.clear();
-		column_types.clear();
-	}
-
-	//! Returns the total number of items matched by the filter (if any) in the Catalog.
-	int GetNumberMatched() const {
-		return number_matched;
-	}
-
-	//! Parses a STAC JSON links array to extract the schema of child STAC items recursively.
-	void ParseSchemaOfJsonLinks(std::string catalog_id, std::string collection_id, yyjson_val *links_val,
-	                            const std::string &links_path, int32_t ttl_seconds) {
-		yyjson_val *temp_val = nullptr;
-		std::size_t links_size = yyjson_arr_size(links_val);
-		yyjson_val *link_val = nullptr;
-		std::size_t item_count = 0;
-
-		for (std::size_t i = 0; i < links_size; i++) {
-			if (yyjson_is_obj(link_val = yyjson_arr_get(links_val, i))) {
-				const char *href_val = nullptr;
-				const char *rel_type = nullptr;
-
-				// Check required fields in the link object.
-
-				if (yyjson_is_str(temp_val = yyjson_obj_get(link_val, "href"))) {
-					href_val = yyjson_get_str(temp_val);
-				}
-				if (!href_val || strlen(href_val) == 0) {
-					continue; // Skip links without a "href" field.
-				}
-				if (yyjson_is_str(temp_val = yyjson_obj_get(link_val, "rel"))) {
-					rel_type = yyjson_get_str(temp_val);
-				}
-				if (!rel_type || strlen(rel_type) == 0) {
-					continue; // Skip links without a "rel" field.
-				}
-
-				// To extract the schema at this level, we only need to parse the first item.
-
-				if (strcmp(rel_type, "item") == 0) {
-					if (item_count > 0) {
-						continue;
-					}
-					item_count++;
-				}
-
-				// Parse the child JSON item recursively.
-
-				if (strcmp(rel_type, "item") == 0 || strcmp(rel_type, "child") == 0 || strcmp(rel_type, "items") == 0) {
-					std::string href = std::string(href_val);
-
-					// Is the href a relative path? If so, resolve it relative to the object path.
-					auto href_path = Path::FromString(href);
-					if (!href_path.IsAbsolute() && !href_path.HasScheme()) {
-						auto parent_dir = Path::FromString(links_path).Parent();
-						href = parent_dir.Join(href_path).ToString();
-					}
-
-					std::string href_str = ReadContentOfCatalog(context, buffer, href, SearchFilter(), ttl_seconds);
-					ParseSchemaOfJsonObject(catalog_id, collection_id, href_str, href, ttl_seconds);
-				}
-			}
-		}
-	}
-
-	//! Parses a STAC JSON object to extract the schema of child STAC items recursively.
-	void ParseSchemaOfJsonObject(std::string catalog_id, std::string collection_id, yyjson_val *json_val,
-	                             const std::string &json_path, int32_t ttl_seconds) {
-		yyjson_val *temp_val = nullptr;
-		const char *item_type = nullptr;
-
-		// Handle data of a STAC Catalog, Collection or Feature...
-
-		if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "type"))) {
-			item_type = yyjson_get_str(temp_val);
-		}
-		if (!item_type || strlen(item_type) == 0) {
-			throw InvalidInputException("Missing 'type' field in the JSON object '%s'.", json_path.c_str());
-		}
-
-		if (strcmp(item_type, "Catalog") == 0) {
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
-				catalog_id = yyjson_get_str(temp_val);
-			}
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
-				ParseSchemaOfJsonLinks(catalog_id, collection_id, temp_val, json_path, ttl_seconds);
-			}
-			return;
-		}
-		if (strcmp(item_type, "Collection") == 0) {
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
-				collection_id = yyjson_get_str(temp_val);
-			}
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
-				ParseSchemaOfJsonLinks(catalog_id, collection_id, temp_val, json_path, ttl_seconds);
-			}
-			return;
-		}
-		if (strcmp(item_type, "FeatureCollection") == 0) {
-			if (yyjson_is_int(temp_val = yyjson_obj_get(json_val, "numberMatched"))) {
-				number_matched = yyjson_get_int(temp_val);
-			}
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "features"))) {
-				std::size_t features_size = yyjson_arr_size(temp_val);
-
-				for (std::size_t i = 0; i < features_size; i++) {
-					yyjson_val *feature_val = yyjson_arr_get(temp_val, i);
-
-					if (yyjson_is_obj(feature_val)) {
-						ParseSchemaOfJsonObject(catalog_id, collection_id, feature_val, json_path, ttl_seconds);
-						break; // Only need to parse the first feature to extract the schema.
-					}
-				}
-			}
-			return;
-		}
-		if (strcmp(item_type, "Feature") == 0) {
-			// Extract collection id (if present)
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "collection"))) {
-				collection_id = yyjson_get_str(temp_val);
-			}
-
-			std::string feature_type = catalog_id + "/" + collection_id;
-
-			// Feature type already processed? If so, skip it to avoid reprocessing the feature type.
-			auto it = itemtype_set.find(feature_type);
-			if (it != itemtype_set.end()) {
-				return;
-			}
-			itemtype_set.insert(feature_type);
-
-			// Extract schema of properties (all other dynamic fields)
-			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "properties"))) {
-				yyjson_obj_iter iter;
-				yyjson_obj_iter_init(temp_val, &iter);
-				yyjson_val *key, *val;
-
-				while ((key = yyjson_obj_iter_next(&iter))) {
-					if (yyjson_is_str(key) && (val = yyjson_obj_iter_get_val(key))) {
-						std::string key_str = yyjson_get_str(key);
-
-						// New property? If so, add it to the schema.
-						auto it = property_set.find(key_str);
-						if (it == property_set.end()) {
-							idx_t key_idx = static_cast<idx_t>(column_names.size());
-							property_set[key_str] = key_idx;
-							column_names.emplace_back(key_str);
-							column_types.emplace_back(JsonObject::GetPropertyTypeOfJsonValue(val));
-						}
-					}
-				}
-			} else {
-				throw InvalidInputException("Missing 'properties' field in the JSON Feature '%s'.", json_path.c_str());
-			}
-		}
-	}
-
-	//! Parses a STAC JSON object to extract the schema of child STAC items recursively.
-	void ParseSchemaOfJsonObject(std::string catalog_id, std::string collection_id, const std::string &json_str,
-	                             const std::string &json_path, int32_t ttl_seconds) {
-		yyjson_doc *json_data = yyjson_read(json_str.c_str(), json_str.size(), YYJSON_READ_NOFLAG);
-		if (!json_data) {
-			throw IOException("Failed to parse data of the object '%s'.", json_path.c_str());
-		}
-
-		try {
-			yyjson_val *root_val = yyjson_doc_get_root(json_data);
-			if (!root_val) {
-				throw IOException("Failed to get the root value of the JSON object '%s'.", json_path.c_str());
-			}
-
-			ParseSchemaOfJsonObject(catalog_id, collection_id, root_val, json_path, ttl_seconds);
-
-			// Make sure to free the JSON document
-			yyjson_doc_free(json_data);
-		} catch (...) {
-			// Make sure to free the JSON document in case of an exception
-			yyjson_doc_free(json_data);
-			throw;
-		}
-	}
-};
-
-//======================================================================================================================
-// STAC Catalog reader
-//======================================================================================================================
-
-//! Reads the content of the set STAC items in a Catalog.
-class ItemReader {
 private:
-	//! The client context for the current query execution.
-	ClientContext &context;
-	//! The buffer used to read JSON content.
-	MemoryStream &buffer;
+	//! The filter context for pushdown filtering, if defined.
+	const FilterContext filter_context;
 
 	//! The Catalog identifier read so far.
 	std::string catalog_id;
 	//! The Collection identifier read so far.
 	std::string collection_id;
 
-private:
-	//! The filter context for pushdown filtering, if defined.
-	const FilterContext filter_context;
-
-	//! Offset to be applied for the rows when reading items.
-	idx_t row_offset = 0;
-	//! Limit for the rows to be read (A value of 0 means no limit is applied).
-	std::size_t row_limit = 0;
-	//! Total number of rows read so far by the ItemReader.
-	std::size_t row_count = 0;
-	//! Total number of items matched by the filter (if any) in the Catalog.
-	int number_matched = -1;
-
 public:
 	//! The schema of the Catalog.
 	const ItemSchema &schema;
-
-	//! The next href for the next page of results, if any.
-	std::string next_href;
-	//! The next method for the next page of results, if any.
-	std::string next_method = "GET";
-	//! The next headers for the next page of results, if any.
-	HttpHeaders next_headers;
-	//! The next body for the next page of results, if any.
-	std::string next_body;
-	//! The headers/body in the next link must be merged into the original request
-	//! and be sent combined in the next request.
-	bool next_merge = false;
 
 	//! Set of item rows already extracted.
 	std::vector<ItemRow> rows;
 
 public:
-	//! Constructor for the ItemReader class.
-	ItemReader(ClientContext &context, MemoryStream &buffer, const ItemSchema &schema,
-	           const FilterContext &filter_context, idx_t row_offset = 0, std::size_t row_limit = 0)
-	    : context(context), buffer(buffer), filter_context(std::move(filter_context)), row_offset(row_offset),
-	      row_limit(row_limit), schema(schema) {
+	//! Returns true if the given STAC "rel_type" requires fetching a node link (e.g., a "child" link).
+	virtual bool NeedConsumeLink(const char *rel_type) override {
+		return rel_type &&
+		       (strcmp(rel_type, "child") == 0 || strcmp(rel_type, "item") == 0 || strcmp(rel_type, "items") == 0);
 	}
 
-	//! Returns the total number of items matched by the filter (if any) in the Catalog.
-	int GetNumberMatched() const {
-		return number_matched;
-	}
-
-	//! Returns the total number of rows read so far by the ItemReader.
-	std::size_t GetRowCount() const {
-		return row_count;
-	}
-
-	//! Reads the content of a STAC JSON links array to extract the child STAC items.
-	void ReadContentOfJsonLinks(yyjson_val *links_val, const std::string &links_path, int32_t ttl_seconds) {
-		yyjson_val *temp_val = nullptr;
-		std::size_t links_size = yyjson_arr_size(links_val);
-		yyjson_val *link_val = nullptr;
-
-		for (std::size_t i = 0; i < links_size; i++) {
-			if (yyjson_is_obj(link_val = yyjson_arr_get(links_val, i))) {
-				const char *href_val = nullptr;
-				const char *rel_type = nullptr;
-
-				// Stop processing links if the limit is reached.
-
-				if (row_limit > 0 && row_count >= row_limit) {
-					next_href.clear();
-					return;
-				}
-
-				// Check required fields in the link object.
-
-				if (yyjson_is_str(temp_val = yyjson_obj_get(link_val, "href"))) {
-					href_val = yyjson_get_str(temp_val);
-				}
-				if (!href_val || strlen(href_val) == 0) {
-					continue; // Skip links without a "href" field.
-				}
-				if (yyjson_is_str(temp_val = yyjson_obj_get(link_val, "rel"))) {
-					rel_type = yyjson_get_str(temp_val);
-				}
-				if (!rel_type || strlen(rel_type) == 0) {
-					continue; // Skip links without a "rel" field.
-				}
-
-				// If the link is a "next" link, store its href for pagination.
-
-				if (strcmp(rel_type, "next") == 0) {
-					next_href = std::string(href_val);
-
-					if (yyjson_is_str(temp_val = yyjson_obj_get(link_val, "method"))) {
-						next_method = yyjson_get_str(temp_val);
-					} else {
-						next_method = "GET";
-					}
-					if (yyjson_is_bool(temp_val = yyjson_obj_get(link_val, "merge"))) {
-						next_merge = yyjson_get_bool(temp_val);
-					} else {
-						next_merge = false;
-					}
-					if (!next_merge) {
-						next_headers.clear();
-						next_body.clear();
-					}
-					if (yyjson_is_obj(temp_val = yyjson_obj_get(link_val, "headers"))) {
-						yyjson_obj_iter iter;
-						yyjson_obj_iter_init(temp_val, &iter);
-						yyjson_val *key, *val;
-
-						while ((key = yyjson_obj_iter_next(&iter))) {
-							if (yyjson_is_str(key) && (val = yyjson_obj_iter_get_val(key)) && yyjson_is_str(val)) {
-								std::string key_str = yyjson_get_str(key);
-								std::string val_str = yyjson_get_str(val);
-								next_headers[key_str] = val_str;
-							}
-						}
-					}
-					if (yyjson_is_obj(temp_val = yyjson_obj_get(link_val, "body"))) {
-						if (next_merge && !next_body.empty()) {
-							throw NotImplementedException(
-							    "The 'body' field in the 'next' link is not supported when 'merge' is true.");
-						}
-						char *json_str = yyjson_val_write(temp_val, YYJSON_WRITE_NOFLAG, nullptr);
-						if (json_str) {
-							next_body = std::string(json_str);
-							free(json_str);
-						} else {
-							next_body.clear();
-						}
-					}
-					continue;
-				}
-
-				// Parse the child JSON item recursively.
-
-				if (strcmp(rel_type, "item") == 0 || strcmp(rel_type, "child") == 0 || strcmp(rel_type, "items") == 0) {
-					std::string href = std::string(href_val);
-
-					// Is the href a relative path? If so, resolve it relative to the object path.
-					auto href_path = Path::FromString(href);
-					if (!href_path.IsAbsolute() && !href_path.HasScheme()) {
-						auto parent_dir = Path::FromString(links_path).Parent();
-						href = parent_dir.Join(href_path).ToString();
-					}
-
-					std::string href_str = ReadContentOfCatalog(context, buffer, href, SearchFilter(), ttl_seconds);
-					ReadContentOfJsonObject(href_str, href, ttl_seconds);
-				}
-			}
-		}
-	}
-
-	//! Reads the content of a STAC JSON object to extract the child STAC items.
-	void ReadContentOfJsonObject(yyjson_val *json_val, const std::string &json_path, int32_t ttl_seconds) {
+	//! Reads the content of a JSON object to extract the child STAC objects.
+	virtual void ReadContentOfObject(yyjson_val *json_val, const std::string &json_path, int32_t ttl_seconds) override {
 		yyjson_val *temp_val = nullptr;
 		const char *item_type = nullptr;
 
@@ -557,7 +102,7 @@ public:
 				catalog_id = yyjson_get_str(temp_val);
 			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
-				ReadContentOfJsonLinks(temp_val, json_path, ttl_seconds);
+				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
 			}
 			return;
 		}
@@ -566,11 +111,15 @@ public:
 				collection_id = yyjson_get_str(temp_val);
 			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
-				ReadContentOfJsonLinks(temp_val, json_path, ttl_seconds);
+				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
 			}
 			return;
 		}
 		if (strcmp(item_type, "FeatureCollection") == 0) {
+			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "search:metadata")) &&
+			    yyjson_is_int(temp_val = yyjson_obj_get(temp_val, "numberMatched"))) {
+				number_matched = yyjson_get_int(temp_val);
+			}
 			if (yyjson_is_int(temp_val = yyjson_obj_get(json_val, "numberMatched"))) {
 				number_matched = yyjson_get_int(temp_val);
 			}
@@ -597,12 +146,12 @@ public:
 					// Parse the child JSON item recursively.
 
 					if (yyjson_is_obj(feature_val)) {
-						ReadContentOfJsonObject(feature_val, json_path, ttl_seconds);
+						ReadContentOfObject(feature_val, json_path, ttl_seconds);
 					}
 				}
 			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
-				ReadContentOfJsonLinks(temp_val, json_path, ttl_seconds);
+				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
 			}
 			return;
 		}
@@ -724,30 +273,6 @@ public:
 			row_count++;
 		}
 	}
-
-	//! Reads the content of a STAC JSON object to extract the child STAC items.
-	void ReadContentOfJsonObject(const std::string &json_str, const std::string &json_path, int32_t ttl_seconds) {
-		yyjson_doc *json_data = yyjson_read(json_str.c_str(), json_str.size(), YYJSON_READ_NOFLAG);
-		if (!json_data) {
-			throw IOException("Failed to parse data of the JSON object '%s'.", json_path.c_str());
-		}
-
-		try {
-			yyjson_val *root_val = yyjson_doc_get_root(json_data);
-			if (!root_val) {
-				throw IOException("Failed to get the root value of the JSON object '%s'.", json_path.c_str());
-			}
-
-			ReadContentOfJsonObject(root_val, json_path, ttl_seconds);
-
-			// Make sure to free the JSON document
-			yyjson_doc_free(json_data);
-		} catch (...) {
-			// Make sure to free the JSON document in case of an exception
-			yyjson_doc_free(json_data);
-			throw;
-		}
-	}
 };
 
 //======================================================================================================================
@@ -829,7 +354,7 @@ struct STAC_Read {
 
 		ItemSchema schema {context, buffer};
 		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, search_filter, 30);
-		schema.ParseSchemaOfJsonObject("", "", json_str, catalog_path, 30);
+		schema.ParseSchemaOfObject("", "", json_str, catalog_path, 30);
 
 		for (const auto &prop_name : schema.column_names) {
 			names.emplace_back(prop_name);
@@ -909,7 +434,7 @@ struct STAC_Read {
 
 		ItemReader reader(context, buffer, schema, filter_context, bind_data.row_offset, bind_data.row_limit);
 		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, bind_data.search_filter, 30);
-		reader.ReadContentOfJsonObject(json_str, catalog_path, 30);
+		reader.ReadContentOfObject(json_str, catalog_path, 30);
 
 		// Set the number of items matched by the filter (if any) in the Catalog.
 
@@ -1066,20 +591,7 @@ struct STAC_Read {
 
 		// Load additional rows from the next pages of the catalog if available.
 
-		while (!reader.next_href.empty()) {
-			std::string href = reader.next_href;
-			reader.next_href.clear();
-
-			std::string &method = reader.next_method;
-			HttpHeaders &headers = reader.next_headers;
-			std::string &body = reader.next_body;
-			std::string content_type = "application/json";
-
-			STAC_SCAN_DEBUG_LOG(1, "Reading next page: '%s' (body: '%s')...", href.c_str(), body.c_str());
-
-			auto json_str = ExecuteHttpRequest(context, href, method, headers, body, content_type, 0);
-			reader.ReadContentOfJsonObject(json_str, href, 0);
-
+		while (reader.ReadNextPageOfResults(0)) {
 			for (idx_t i = 0; i < reader.rows.size(); i++, row_idx++) {
 				const auto &item_row = reader.rows[i];
 

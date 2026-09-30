@@ -5,7 +5,9 @@ set(EXTENSION_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/json_geometry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/json_object.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/search_filter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/stac_reader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stac_read_functions.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/stac_schema.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stac_types.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/stac_types_casts.cpp
     PARENT_SCOPE)
