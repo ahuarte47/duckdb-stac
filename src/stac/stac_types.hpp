@@ -27,6 +27,50 @@ GetDebugLevel() {
 
 namespace duckdb {
 
+//! Column indices for the implicit columns of the STAC collection table function.
+#define STAC_COLLECTION_CATALOG_COLUMN_INDEX     0
+#define STAC_COLLECTION_ID_COLUMN_INDEX          1
+#define STAC_COLLECTION_TITLE_COLUMN_INDEX       2
+#define STAC_COLLECTION_DESCRIPTION_COLUMN_INDEX 3
+#define STAC_COLLECTION_KEYWORDS_COLUMN_INDEX    4
+#define STAC_COLLECTION_LICENSE_COLUMN_INDEX     5
+#define STAC_COLLECTION_PROVIDERS_COLUMN_INDEX   6
+#define STAC_COLLECTION_BBOX_COLUMN_INDEX        7
+#define STAC_COLLECTION_INTERVAL_COLUMN_INDEX    8
+#define STAC_COLLECTION_SUMMARIES_COLUMN_INDEX   9
+#define STAC_COLLECTION_VERSION_COLUMN_INDEX     10
+#define STAC_COLLECTION_EXTENSIONS_COLUMN_INDEX  11
+#define STAC_COLLECTION_LINKS_COLUMN_INDEX       12
+#define STAC_COLLECTION_ASSETS_COLUMN_INDEX      13
+#define STAC_COLLECTION_ITEM_ASSETS_COLUMN_INDEX 14
+
+//! Represents a single STAC item row in the result table.
+struct CollectionRow {
+private:
+	//! A constant NULL value to return for invalid column indices.
+	static const Value NULL_VALUE;
+
+public:
+	duckdb::Value catalog;
+	duckdb::Value id;
+	duckdb::Value title;
+	duckdb::Value description;
+	duckdb::Value keywords;
+	duckdb::Value license;
+	duckdb::Value providers;
+	duckdb::Value bbox;
+	duckdb::Value interval;
+	duckdb::Value summaries;
+	duckdb::Value version;
+	duckdb::Value extensions;
+	duckdb::Value links;
+	duckdb::Value assets;
+	duckdb::Value item_assets;
+
+	//! Get the value of a column by index.
+	const duckdb::Value &ValueOf(const idx_t &dim_index) const;
+};
+
 //! Column indices for the implicit columns of the STAC item table function.
 #define STAC_ITEM_CATALOG_COLUMN_INDEX        0
 #define STAC_ITEM_COLLECTION_COLUMN_INDEX     1

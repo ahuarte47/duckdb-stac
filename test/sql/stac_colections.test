@@ -1,0 +1,33 @@
+# name: test/sql/stac_colections.test
+# description: test stac extension
+# group: [sql]
+
+require stac
+
+statement ok
+INSTALL httpfs;
+
+statement ok
+LOAD httpfs;
+
+query IIIII
+SELECT
+    catalog, id, title, bbox, "interval"
+FROM
+    STAC_Collections('https://raw.githubusercontent.com/radiantearth/stac-spec/refs/heads/master/examples/catalog.json')
+WHERE
+    catalog = 'examples' AND id = 'extensions-collection'
+;
+----
+examples	extensions-collection	Collection of Extension Items	{'minx': -180.0, 'miny': -56.0, 'maxx': 180.0, 'maxy': 83.0}	['2009-05-20 02:40:01.042784', '2018-11-03 23:59:55.112875']
+
+query III
+SELECT
+    id, keywords, bbox
+FROM
+    STAC_Collections('https://earth-search.aws.element84.com/v1/collections')
+WHERE
+    id = 'sentinel-2-l2a'
+;
+----
+sentinel-2-l2a	[sentinel, earth observation, esa]	{'minx': -180.0, 'miny': -90.0, 'maxx': 180.0, 'maxy': 90.0}

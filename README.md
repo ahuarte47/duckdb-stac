@@ -36,6 +36,7 @@ LOAD stac;
 
 | Function | Summary |
 | --- | --- |
+| [`STAC_Collections`](docs/functions.md#stac_collections) | Returns the collections in a STAC catalog from the given URL or JSON file and returns it as a table. |
 | [`STAC_Read`](docs/functions.md#stac_read) | Reads the content of a STAC catalog from the given URL or JSON file and returns it as a table. |
 | [`STAC_Search`](docs/functions.md#stac_search) | Searches a STAC catalog based on the given criteria and returns matching items as a table. |
 

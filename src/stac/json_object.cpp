@@ -1,5 +1,6 @@
 #include "json_object.hpp"
 #include "stac_types.hpp"
+#include "duckdb/common/types/timestamp.hpp"
 
 namespace duckdb {
 
@@ -51,6 +52,16 @@ Value JsonObject::GetPropertyValueOfJsonValue(yyjson_val *val) {
 	return Value();
 }
 
+Value JsonObject::ParseGenericObject(yyjson_val *obj_val) {
+	char *json_str = yyjson_val_write(obj_val, YYJSON_WRITE_NOFLAG, nullptr);
+	if (json_str) {
+		Value json_value = Value(json_str);
+		free(json_str);
+		return json_value;
+	}
+	return Value();
+}
+
 Value JsonObject::ParseBoundingBoxObject(yyjson_val *bbox_val) {
 	if (yyjson_is_arr(bbox_val) && yyjson_arr_size(bbox_val) >= 4) {
 		yyjson_val *xmin_val = yyjson_arr_get(bbox_val, 0);
@@ -58,12 +69,11 @@ Value JsonObject::ParseBoundingBoxObject(yyjson_val *bbox_val) {
 		yyjson_val *xmax_val = yyjson_arr_get(bbox_val, 2);
 		yyjson_val *ymax_val = yyjson_arr_get(bbox_val, 3);
 
-		if (yyjson_is_real(xmin_val) && yyjson_is_real(ymin_val) && yyjson_is_real(xmax_val) &&
-		    yyjson_is_real(ymax_val)) {
-			double xmin = yyjson_get_real(xmin_val);
-			double ymin = yyjson_get_real(ymin_val);
-			double xmax = yyjson_get_real(xmax_val);
-			double ymax = yyjson_get_real(ymax_val);
+		if (yyjson_is_num(xmin_val) && yyjson_is_num(ymin_val) && yyjson_is_num(xmax_val) && yyjson_is_num(ymax_val)) {
+			double xmin = yyjson_get_num(xmin_val);
+			double ymin = yyjson_get_num(ymin_val);
+			double xmax = yyjson_get_num(xmax_val);
+			double ymax = yyjson_get_num(ymax_val);
 
 			Value bbox = Value::STRUCT({{"xmin", xmin}, {"ymin", ymin}, {"xmax", xmax}, {"ymax", ymax}});
 			bbox.Reinterpret(STACTypes::BBOX());
@@ -71,6 +81,28 @@ Value JsonObject::ParseBoundingBoxObject(yyjson_val *bbox_val) {
 		}
 	}
 	return Value();
+}
+
+Value JsonObject::ParseIntervalObject(yyjson_val *interval_val) {
+	vector<Value> timestamps;
+
+	if (yyjson_is_arr(interval_val)) {
+		yyjson_arr_iter iter;
+		yyjson_arr_iter_init(interval_val, &iter);
+		yyjson_val *ts_val;
+
+		while ((ts_val = yyjson_arr_iter_next(&iter))) {
+			if (yyjson_is_null(ts_val)) {
+				timestamps.push_back(Value());
+				continue;
+			}
+			if (yyjson_is_str(ts_val)) {
+				timestamp_t ts = Timestamp::FromString(yyjson_get_str(ts_val), true);
+				timestamps.push_back(Value::TIMESTAMP(ts));
+			}
+		}
+	}
+	return Value::LIST(LogicalType::TIMESTAMP, timestamps);
 }
 
 Value JsonObject::ParseLinksObject(yyjson_val *links_val) {
@@ -176,6 +208,23 @@ Value JsonObject::ParseExtensionsObject(yyjson_val *extensions_val) {
 		}
 	}
 	return Value::LIST(LogicalType::VARCHAR, extensions);
+}
+
+Value JsonObject::ParseKeywordsObject(yyjson_val *keywords_val) {
+	vector<Value> keywords;
+
+	if (yyjson_is_arr(keywords_val)) {
+		yyjson_arr_iter iter;
+		yyjson_arr_iter_init(keywords_val, &iter);
+		yyjson_val *key_val;
+
+		while ((key_val = yyjson_arr_iter_next(&iter))) {
+			if (yyjson_is_str(key_val)) {
+				keywords.push_back(Value(yyjson_get_str(key_val)));
+			}
+		}
+	}
+	return Value::LIST(LogicalType::VARCHAR, keywords);
 }
 
 } // namespace duckdb

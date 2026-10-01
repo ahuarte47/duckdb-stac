@@ -1,6 +1,11 @@
 Release history
 ---------------
 
+0.3.0
+++++++++++++++++++
+
+- New table function `STAC_Collections` to list the collections defined in a STAC Catalog.
+
 0.2.2
 ++++++++++++++++++
 

@@ -40,10 +40,10 @@ namespace duckdb {
 namespace {
 
 //======================================================================================================================
-// STAC Item Reader
+// STAC Item & Collection Readers
 //======================================================================================================================
 
-//! Reads the set items contained in a STAC Catalog.
+//! Reads the set of items contained in a STAC Catalog.
 class ItemReader : public STACReader {
 public:
 	using STACReader::ReadContentOfObject;
@@ -98,21 +98,27 @@ public:
 		}
 
 		if (strcmp(item_type, "Catalog") == 0) {
+			std::string prev_catalog_id = catalog_id;
+
 			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
 				catalog_id = yyjson_get_str(temp_val);
 			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
 				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
 			}
+			catalog_id = prev_catalog_id;
 			return;
 		}
 		if (strcmp(item_type, "Collection") == 0) {
+			std::string prev_collection_id = collection_id;
+
 			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
 				collection_id = yyjson_get_str(temp_val);
 			}
 			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
 				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
 			}
+			collection_id = prev_collection_id;
 			return;
 		}
 		if (strcmp(item_type, "FeatureCollection") == 0) {
@@ -271,6 +277,188 @@ public:
 
 			rows.push_back(row);
 			row_count++;
+		}
+	}
+};
+
+//! Reads the set of collections contained in a STAC Catalog.
+class CollectionReader : public STACReader {
+public:
+	using STACReader::ReadContentOfObject;
+
+	CollectionReader(ClientContext &context, MemoryStream &buffer, idx_t row_offset = 0, std::size_t row_limit = 0)
+	    : STACReader(context, buffer, row_offset, row_limit) {
+	}
+
+private:
+	//! The Catalog identifier read so far.
+	std::string catalog_id;
+
+public:
+	//! Set of collection rows already extracted.
+	std::vector<CollectionRow> rows;
+
+public:
+	//! Returns true if the given STAC "rel_type" requires fetching a node link (e.g., a "child" link).
+	bool NeedConsumeLink(const char *rel_type) override {
+		return rel_type && strcmp(rel_type, "child") == 0;
+	}
+
+	//! Reads the content of a JSON object to extract the child STAC objects.
+	void ReadContentOfObject(yyjson_val *json_val, const std::string &json_path, int32_t ttl_seconds) override {
+		yyjson_val *temp_val = nullptr;
+		const char *item_type = nullptr;
+
+		// Stop processing if the limit is reached.
+
+		if (row_limit > 0 && row_count >= row_limit) {
+			next_href.clear();
+			return;
+		}
+
+		// Handle data of a STAC Catalog or Collection...
+
+		if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "type"))) {
+			item_type = yyjson_get_str(temp_val);
+		}
+		if (!item_type || strlen(item_type) == 0) {
+			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "collections"))) {
+				item_type = "Collections";
+			} else {
+				throw InvalidInputException("Missing 'type' field in the JSON object '%s'.", json_path.c_str());
+			}
+		}
+
+		if (strcmp(item_type, "Catalog") == 0) {
+			std::string prev_catalog_id = catalog_id;
+
+			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
+				catalog_id = yyjson_get_str(temp_val);
+			}
+			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
+			}
+			catalog_id = prev_catalog_id;
+			return;
+		}
+		if (strcmp(item_type, "Collections") == 0) {
+			yyjson_val *colls_val = yyjson_obj_get(json_val, "collections");
+			std::size_t colls_size = yyjson_arr_size(colls_val);
+			yyjson_val *coll_val = nullptr;
+
+			for (std::size_t i = 0; i < colls_size; i++) {
+				if (yyjson_is_obj(coll_val = yyjson_arr_get(colls_val, i))) {
+					ReadContentOfObject(coll_val, json_path, ttl_seconds);
+				}
+			}
+			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
+			}
+			return;
+		}
+		if (strcmp(item_type, "Collection") == 0) {
+			// Ignore rows until the row_offset is reached.
+
+			if (row_offset > 0) {
+				row_offset--;
+				return;
+			}
+
+			// Collect the data of the Collection.
+
+			CollectionRow row;
+			row.catalog = Value(catalog_id);
+
+			// Extract id
+			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
+				row.id = Value(yyjson_get_str(temp_val));
+			} else {
+				throw InvalidInputException("Missing 'id' field in the JSON Collection '%s'.", json_path.c_str());
+			}
+
+			// Extract title
+			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "title"))) {
+				row.title = Value(yyjson_get_str(temp_val));
+			}
+
+			// Extract description
+			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "description"))) {
+				row.description = Value(yyjson_get_str(temp_val));
+			}
+
+			// Extract keywords
+			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "keywords"))) {
+				row.keywords = JsonObject::ParseKeywordsObject(temp_val);
+			}
+
+			// Extract license
+			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "license"))) {
+				row.license = Value(yyjson_get_str(temp_val));
+			}
+
+			// Extract providers
+			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "providers"))) {
+				row.providers = JsonObject::ParseGenericObject(temp_val);
+			}
+
+			// Extract bbox/interval (extent)
+			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "extent"))) {
+				yyjson_val *spatial_val = nullptr;
+				yyjson_val *rngtime_val = nullptr;
+
+				if (yyjson_is_obj(spatial_val = yyjson_obj_get(temp_val, "spatial")) &&
+				    yyjson_is_arr(spatial_val = yyjson_obj_get(spatial_val, "bbox")) &&
+				    yyjson_arr_size(spatial_val) > 0) {
+					yyjson_val *bbox_val = yyjson_arr_get(spatial_val, 0);
+					row.bbox = JsonObject::ParseBoundingBoxObject(bbox_val);
+				}
+				if (yyjson_is_obj(rngtime_val = yyjson_obj_get(temp_val, "temporal")) &&
+				    yyjson_is_arr(rngtime_val = yyjson_obj_get(rngtime_val, "interval")) &&
+				    yyjson_arr_size(rngtime_val) > 0) {
+					yyjson_val *interval_val = yyjson_arr_get(rngtime_val, 0);
+					row.interval = JsonObject::ParseIntervalObject(interval_val);
+				}
+			}
+
+			// Extract summaries
+			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "summaries"))) {
+				row.summaries = JsonObject::ParseGenericObject(temp_val);
+			}
+
+			// Extract stac_version
+			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "stac_version"))) {
+				row.version = Value(yyjson_get_str(temp_val));
+			}
+
+			// Extract stac_extensions
+			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "stac_extensions"))) {
+				row.extensions = JsonObject::ParseExtensionsObject(temp_val);
+			}
+
+			// Extract links
+			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+				row.links = JsonObject::ParseLinksObject(temp_val);
+			}
+
+			// Extract assets
+			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "assets"))) {
+				row.assets = JsonObject::ParseAssetsObject(temp_val);
+			}
+
+			// Extract item assets
+			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "item_assets"))) {
+				row.item_assets = JsonObject::ParseGenericObject(temp_val);
+			}
+
+			rows.push_back(row);
+			row_count++;
+
+			// Next, extract the links if available.
+
+			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
+			}
+			return;
 		}
 	}
 };
@@ -836,6 +1024,157 @@ struct STAC_Search : public STAC_Read {
 	}
 };
 
+//======================================================================================================================
+// STAC_Collections
+//======================================================================================================================
+
+struct STAC_Collections {
+	//------------------------------------------------------------------------------------------------------------------
+	// Bind
+	//------------------------------------------------------------------------------------------------------------------
+
+	struct BindData final : TableFunctionData {
+		std::vector<CollectionRow> collections;
+		explicit BindData(std::vector<CollectionRow> &&collections) : collections(std::move(collections)) {
+		}
+	};
+
+	static unique_ptr<FunctionData> Bind(ClientContext &context, TableFunctionBindInput &input,
+	                                     vector<LogicalType> &return_types, vector<string> &names) {
+		D_ASSERT(input.inputs.size() == 1);
+
+		auto catalog_path = input.inputs[0].GetValue<std::string>();
+		if (catalog_path.empty()) {
+			throw InvalidInputException("First parameter, the 'catalog_path', cannot be empty.");
+		}
+
+		// Get the collections metadata and determine the return types and column names.
+
+		names.emplace_back("catalog");
+		return_types.emplace_back(LogicalType::VARCHAR);
+		names.emplace_back("id");
+		return_types.emplace_back(LogicalType::VARCHAR);
+		names.emplace_back("title");
+		return_types.emplace_back(LogicalType::VARCHAR);
+		names.emplace_back("description");
+		return_types.emplace_back(LogicalType::VARCHAR);
+		names.emplace_back("keywords");
+		return_types.emplace_back(LogicalType::LIST(LogicalType::VARCHAR));
+		names.emplace_back("license");
+		return_types.emplace_back(LogicalType::VARCHAR);
+		names.emplace_back("providers");
+		return_types.emplace_back(LogicalType::JSON());
+		names.emplace_back("bbox");
+		return_types.emplace_back(STACTypes::BBOX());
+		names.emplace_back("interval");
+		return_types.emplace_back(LogicalType::LIST(LogicalType::TIMESTAMP));
+		names.emplace_back("summaries");
+		return_types.emplace_back(LogicalType::JSON());
+		names.emplace_back("stac_version");
+		return_types.emplace_back(LogicalType::VARCHAR);
+		names.emplace_back("stac_extensions");
+		return_types.emplace_back(LogicalType::LIST(LogicalType::VARCHAR));
+		names.emplace_back("links");
+		return_types.emplace_back(LogicalType::LIST(STACTypes::LINK()));
+		names.emplace_back("assets");
+		return_types.push_back(LogicalType::MAP(LogicalType::VARCHAR, STACTypes::ASSET()));
+		names.emplace_back("item_assets");
+		return_types.emplace_back(LogicalType::JSON());
+
+		// Load all collections in the STAC catalog.
+
+		MemoryStream buffer(Allocator::Get(context));
+		CollectionReader reader(context, buffer, 0, 0);
+		int32_t ttl_seconds = 30;
+
+		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, SearchFilter(), ttl_seconds);
+		reader.ReadContentOfObject(json_str, catalog_path, ttl_seconds);
+
+		while (reader.ReadNextPageOfResults(ttl_seconds)) {
+			//...
+		};
+
+		return make_uniq_base<FunctionData, BindData>(std::move(reader.rows));
+	}
+
+	//------------------------------------------------------------------------------------------------------------------
+	// Init
+	//------------------------------------------------------------------------------------------------------------------
+
+	struct State final : GlobalTableFunctionState {
+		idx_t current_idx;
+		explicit State() : current_idx(0) {
+		}
+	};
+
+	static unique_ptr<GlobalTableFunctionState> Init(ClientContext &context, TableFunctionInitInput &input) {
+		// Capture the final projected column IDs here, after all optimizer passes.
+		// input.column_ids is guaranteed to match output.data.size() in Execute.
+		auto &bind_data = const_cast<BindData &>(input.bind_data->Cast<BindData>());
+		bind_data.column_ids = input.column_ids;
+
+		return make_uniq_base<GlobalTableFunctionState, State>();
+	}
+
+	//------------------------------------------------------------------------------------------------------------------
+	// Execute
+	//------------------------------------------------------------------------------------------------------------------
+
+	static void Execute(ClientContext &context, TableFunctionInput &input, DataChunk &output) {
+		auto &bind_data = input.bind_data->Cast<BindData>();
+		auto &gstate = input.global_state->Cast<State>();
+
+		idx_t count = 0;
+
+		const auto total_end = bind_data.collections.size();
+		const auto batch_end = gstate.current_idx + STANDARD_VECTOR_SIZE;
+		const auto chunk_end = MinValue<idx_t>(batch_end, total_end);
+
+		for (const auto next_idx = chunk_end; gstate.current_idx < next_idx; gstate.current_idx++) {
+			const auto &collection_row = bind_data.collections[gstate.current_idx];
+
+			for (idx_t col_idx = 0; col_idx < bind_data.column_ids.size(); col_idx++) {
+				const idx_t &dim_index = bind_data.column_ids[col_idx];
+				const Value &value = collection_row.ValueOf(dim_index);
+				output.data[col_idx].SetValue(count, value);
+			}
+			count++;
+		}
+
+		output.SetCardinality(count);
+	}
+
+	//------------------------------------------------------------------------------------------------------------------
+	// Documentation
+	//------------------------------------------------------------------------------------------------------------------
+
+	static constexpr auto DESCRIPTION = R"(
+		Returns the collections available in a SpatioTemporal Asset Catalog (STAC) catalog.
+	)";
+
+	static constexpr auto EXAMPLE = R"(
+		SELECT * FROM STAC_Collections('https://example.com/stac/catalog.json');
+	)";
+
+	//------------------------------------------------------------------------------------------------------------------
+	// Register
+	//------------------------------------------------------------------------------------------------------------------
+
+	static void Register(ExtensionLoader &loader) {
+		InsertionOrderPreservingMap<string> tags;
+		tags.insert("ext", "stac");
+		tags.insert("category", "table");
+
+		TableFunction func("STAC_Collections", {LogicalType::VARCHAR}, Execute, Bind, Init);
+
+		// Enable projection pushdown - allows DuckDB to tell us which columns are needed
+		// The column_ids will be passed to InitGlobal via TableFunctionInitInput
+		func.projection_pushdown = true;
+
+		RegisterFunction<TableFunction>(loader, func, CatalogType::TABLE_FUNCTION_ENTRY, DESCRIPTION, EXAMPLE, tags);
+	}
+};
+
 } // namespace
 
 // #####################################################################################################################
@@ -845,6 +1184,7 @@ struct STAC_Search : public STAC_Read {
 void STACReadFunctions::Register(ExtensionLoader &loader) {
 	STAC_Read::Register(loader);
 	STAC_Search::Register(loader);
+	STAC_Collections::Register(loader);
 }
 
 } // namespace duckdb

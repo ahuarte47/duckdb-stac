@@ -6,12 +6,37 @@
 
 | Function | Summary |
 | --- | --- |
+| [`STAC_Collections`](#stac_collections) | Returns the collections in a STAC catalog from the given URL or JSON file and returns it as a table. |
 | [`STAC_Read`](#stac_read) | Reads the content of a STAC catalog from the given URL or JSON file and returns it as a table. |
 | [`STAC_Search`](#stac_search) | Searches a STAC catalog based on the given criteria and returns matching items as a table. |
 
 ----
 
 ## Table Functions
+
+### STAC_Collections
+
+#### Signature
+
+```sql
+STAC_Collections (catalog VARCHAR)
+```
+
+#### Description
+
+Returns the collections available in a STAC catalog from the given URL or JSON file and returns it as a table.
+
+Each row represents a single STAC collection. Almost all collection fields are mapped to columns;
+nested JSON structures are preserved as Parquet structs where possible, but collection properties
+are promoted to the top level for easier filtering and querying.
+
+#### Example
+
+```sql
+SELECT * FROM STAC_Collections('https://example.com/stac/catalog.json');
+```
+
+----
 
 ### STAC_Read
 

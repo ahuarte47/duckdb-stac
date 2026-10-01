@@ -3,6 +3,45 @@
 
 namespace duckdb {
 
+const Value CollectionRow::NULL_VALUE = Value();
+
+const duckdb::Value &CollectionRow::ValueOf(const idx_t &dim_index) const {
+	switch (dim_index) {
+	case STAC_COLLECTION_CATALOG_COLUMN_INDEX:
+		return catalog;
+	case STAC_COLLECTION_ID_COLUMN_INDEX:
+		return id;
+	case STAC_COLLECTION_TITLE_COLUMN_INDEX:
+		return title;
+	case STAC_COLLECTION_DESCRIPTION_COLUMN_INDEX:
+		return description;
+	case STAC_COLLECTION_KEYWORDS_COLUMN_INDEX:
+		return keywords;
+	case STAC_COLLECTION_LICENSE_COLUMN_INDEX:
+		return license;
+	case STAC_COLLECTION_PROVIDERS_COLUMN_INDEX:
+		return providers;
+	case STAC_COLLECTION_BBOX_COLUMN_INDEX:
+		return bbox;
+	case STAC_COLLECTION_INTERVAL_COLUMN_INDEX:
+		return interval;
+	case STAC_COLLECTION_SUMMARIES_COLUMN_INDEX:
+		return summaries;
+	case STAC_COLLECTION_VERSION_COLUMN_INDEX:
+		return version;
+	case STAC_COLLECTION_EXTENSIONS_COLUMN_INDEX:
+		return extensions;
+	case STAC_COLLECTION_LINKS_COLUMN_INDEX:
+		return links;
+	case STAC_COLLECTION_ASSETS_COLUMN_INDEX:
+		return assets;
+	case STAC_COLLECTION_ITEM_ASSETS_COLUMN_INDEX:
+		return item_assets;
+	default:
+		throw InvalidInputException("Invalid column index for CollectionRow");
+	}
+}
+
 const Value ItemRow::NULL_VALUE = Value();
 
 const duckdb::Value &ItemRow::ValueOf(const idx_t &dim_index) const {
