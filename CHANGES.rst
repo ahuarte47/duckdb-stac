@@ -1,6 +1,11 @@
 Release history
 ---------------
 
+0.3.1
+++++++++++++++++++
+
+- Performance improvement in the pushdown of filter expressions.
+
 0.3.0
 ++++++++++++++++++
 

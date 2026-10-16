@@ -49,13 +49,13 @@ public:
 	using STACReader::ReadContentOfObject;
 
 	ItemReader(ClientContext &context, MemoryStream &buffer, const ItemSchema &schema,
-	           const FilterContext &filter_context, idx_t row_offset = 0, std::size_t row_limit = 0)
-	    : STACReader(context, buffer, row_offset, row_limit), filter_context(filter_context), schema(schema) {
+	           unique_ptr<FilterEval> filter_eval, idx_t row_offset = 0, std::size_t row_limit = 0)
+	    : STACReader(context, buffer, row_offset, row_limit), filter_eval(std::move(filter_eval)), schema(schema) {
 	}
 
 private:
-	//! The filter context for pushdown filtering, if defined.
-	const FilterContext filter_context;
+	//! The filter evaluator for pushdown filtering, if defined.
+	unique_ptr<FilterEval> filter_eval;
 
 	//! The Catalog identifier read so far.
 	std::string catalog_id;
@@ -137,7 +137,7 @@ public:
 
 					// Ignore rows until the row_offset is reached.
 
-					if (row_offset > 0 && filter_context.expressions.empty()) {
+					if (row_offset > 0 && !filter_eval->HasExpressions()) {
 						row_offset--;
 						continue;
 					}
@@ -164,7 +164,7 @@ public:
 		if (strcmp(item_type, "Feature") == 0) {
 			// Ignore rows until the row_offset is reached.
 
-			if (row_offset > 0 && filter_context.expressions.empty()) {
+			if (row_offset > 0 && !filter_eval->HasExpressions()) {
 				row_offset--;
 				return;
 			}
@@ -265,12 +265,12 @@ public:
 			}
 
 			// The filter expressions were evaluated but item does not match the conditions?
-			if (!FilterEval::Eval(row, filter_context)) {
+			if (!filter_eval->Eval(row)) {
 				STAC_SCAN_DEBUG_LOG(1, " > id=(%s): item did not match filter conditions, skipped",
 				                    row.id.ToString().c_str());
 				return;
 			}
-			if (row_offset > 0 && !filter_context.expressions.empty()) {
+			if (row_offset > 0 && filter_eval->HasExpressions()) {
 				row_offset--;
 				return;
 			}
@@ -574,8 +574,8 @@ struct STAC_Read {
 	//------------------------------------------------------------------------------------------------------------------
 
 	struct State final : GlobalTableFunctionState {
-		ItemReader reader;
-		explicit State(ItemReader &&reader) : reader(std::move(reader)) {
+		unique_ptr<ItemReader> reader;
+		explicit State(unique_ptr<ItemReader> reader) : reader(std::move(reader)) {
 		}
 	};
 
@@ -618,16 +618,19 @@ struct STAC_Read {
 		const auto &filter_expressions = bind_data.filter_expressions;
 		const auto &column_ids = bind_data.column_ids;
 		const auto &column_types = bind_data.column_types;
-		const FilterContext filter_context(context, filter_expressions, column_ids, column_types);
+		auto filter_eval = make_uniq<FilterEval>(context, filter_expressions, column_ids, column_types);
 
-		ItemReader reader(context, buffer, schema, filter_context, bind_data.row_offset, bind_data.row_limit);
+		const auto row_offset = bind_data.row_offset;
+		const auto row_limit = bind_data.row_limit;
+		auto reader = make_uniq<ItemReader>(context, buffer, schema, std::move(filter_eval), row_offset, row_limit);
+
 		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, bind_data.search_filter, 30);
-		reader.ReadContentOfObject(json_str, catalog_path, 30);
+		reader->ReadContentOfObject(json_str, catalog_path, 30);
 
 		// Set the number of items matched by the filter (if any) in the Catalog.
 
 		if (bind_data.number_matched == -1) {
-			bind_data.number_matched = reader.GetNumberMatched();
+			bind_data.number_matched = reader->GetNumberMatched();
 		}
 
 		STAC_SCAN_DEBUG_LOG(1, "Request matched %d items", bind_data.number_matched);
@@ -756,16 +759,16 @@ struct STAC_Read {
 		auto &bind_data = const_cast<BindData &>(input.bind_data->Cast<BindData>());
 		auto &gstate = input.global_state->Cast<State>();
 
-		ItemReader &reader = gstate.reader;
+		ItemReader *reader = gstate.reader.get();
 		idx_t row_idx = 0;
 
 		// Load pending rows from the reader into the output chunk.
 
-		for (idx_t i = 0; i < reader.rows.size(); i++, row_idx++) {
-			const auto &item_row = reader.rows[i];
+		for (idx_t i = 0; i < reader->rows.size(); i++, row_idx++) {
+			const auto &item_row = reader->rows[i];
 
 			if (row_idx >= STANDARD_VECTOR_SIZE - 1) {
-				reader.rows.erase(reader.rows.begin(), reader.rows.begin() + i);
+				reader->rows.erase(reader->rows.begin(), reader->rows.begin() + i);
 				output.SetCardinality(row_idx + 1);
 				return;
 			}
@@ -775,16 +778,16 @@ struct STAC_Read {
 				output.data[col_idx].SetValue(row_idx, value);
 			}
 		}
-		reader.rows.clear();
+		reader->rows.clear();
 
 		// Load additional rows from the next pages of the catalog if available.
 
-		while (reader.ReadNextPageOfResults(0)) {
-			for (idx_t i = 0; i < reader.rows.size(); i++, row_idx++) {
-				const auto &item_row = reader.rows[i];
+		while (reader->ReadNextPageOfResults(0)) {
+			for (idx_t i = 0; i < reader->rows.size(); i++, row_idx++) {
+				const auto &item_row = reader->rows[i];
 
 				if (row_idx >= STANDARD_VECTOR_SIZE - 1) {
-					reader.rows.erase(reader.rows.begin(), reader.rows.begin() + i);
+					reader->rows.erase(reader->rows.begin(), reader->rows.begin() + i);
 					output.SetCardinality(row_idx + 1);
 					return;
 				}
@@ -794,7 +797,7 @@ struct STAC_Read {
 					output.data[col_idx].SetValue(row_idx, value);
 				}
 			}
-			reader.rows.clear();
+			reader->rows.clear();
 		}
 
 		// Set the cardinality of the output.
@@ -809,9 +812,9 @@ struct STAC_Read {
 	                       const GlobalTableFunctionState *global_state) {
 		auto &gstate = global_state->Cast<State>();
 
-		const ItemReader &reader = gstate.reader;
-		int number_matched = reader.GetNumberMatched();
-		std::size_t current_row = reader.GetRowCount();
+		const ItemReader *reader = gstate.reader.get();
+		int number_matched = reader->GetNumberMatched();
+		std::size_t current_row = reader->GetRowCount();
 
 		// The result size is unknown, no progress to report.
 		if (number_matched <= 0 || current_row <= 0) {

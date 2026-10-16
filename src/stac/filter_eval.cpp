@@ -10,47 +10,52 @@ namespace duckdb {
 // FilterEval
 //======================================================================================================================
 
-bool FilterEval::Eval(const ItemRow &row, const FilterContext &ctx) {
+ExpressionExecutor *FilterEval::GetExecutor() {
+	if (!executor) {
+		vector<LogicalType> data_types;
+
+		// Build a 1-row DataChunk with the projected columns populated from the ItemRow.
+		for (idx_t i = 0; i < column_ids.size(); i++) {
+			const column_t table_col = column_ids[i];
+			data_types.emplace_back(column_types[table_col]);
+		}
+
+		// Initialize the input chunk with the column values from the ItemRow.
+		input.Initialize(context, data_types, 1);
+		input.SetCardinality(1);
+
+		// Prepare a chunk to hold the results of expression evaluation.
+		result.Initialize(context, vector<LogicalType>(expressions.size(), LogicalType::BOOLEAN), 1);
+
+		// Create the expression executor and add the filter expressions to it.
+
+		executor = make_uniq<ExpressionExecutor>(context);
+
+		for (const auto &expr : expressions) {
+			executor->AddExpression(*expr);
+		}
+	}
+	return executor.get();
+}
+
+bool FilterEval::Eval(const ItemRow &row) {
 	// If there are no filter expressions, the row passes the filter by default.
-	if (ctx.expressions.empty()) {
+	if (expressions.empty()) {
 		return true;
 	}
 
-	const auto &column_ids = ctx.column_ids;
-	const auto &column_types = ctx.column_types;
-
-	// Build a 1-row DataChunk with the projected columns populated from the ItemRow.
-	vector<LogicalType> data_types;
-	for (idx_t i = 0; i < column_ids.size(); i++) {
-		const column_t table_col = column_ids[i];
-		data_types.emplace_back(column_types[table_col]);
-	}
-
-	// Initialize the input chunk with the column values from the ItemRow.
-	DataChunk input;
-	input.Initialize(ctx.context, data_types, 1);
-
-	for (idx_t i = 0; i < column_ids.size(); i++) {
-		const column_t table_col = column_ids[i];
-		input.data[i].SetValue(0, row.ValueOf(table_col));
-	}
-	input.SetCardinality(1);
-
-	// Prepare a chunk to hold the results of expression evaluation.
-	DataChunk result;
-	result.Initialize(ctx.context, vector<LogicalType>(ctx.expressions.size(), LogicalType::BOOLEAN), 1);
-
 	// Evaluate the filter!
 	try {
-		ExpressionExecutor executor(ctx.context);
+		ExpressionExecutor *executor = GetExecutor();
 
-		for (const auto &expr : ctx.expressions) {
-			executor.AddExpression(*expr);
+		for (idx_t i = 0; i < column_ids.size(); i++) {
+			const column_t table_col = column_ids[i];
+			input.data[i].SetValue(0, row.ValueOf(table_col));
 		}
 
-		executor.Execute(input, result);
+		executor->Execute(input, result);
 
-		for (idx_t i = 0; i < ctx.expressions.size(); i++) {
+		for (idx_t i = 0; i < expressions.size(); i++) {
 			const Value val = result.GetValue(i, 0);
 
 			if (val.IsNull() || !BooleanValue::Get(val)) {
