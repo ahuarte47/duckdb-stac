@@ -253,6 +253,23 @@ HttpSettings HttpRequest::ExtractHttpSettings(ClientContext &context, const stri
 	if (secret_reader.TryGetSecretKey<string>("bearer_token", bearer_token) && !bearer_token.empty()) {
 		settings.bearer_token_auth.token = bearer_token;
 	}
+	Value extra_headers;
+	if (secret_reader.TryGetSecretKey<Value>("extra_http_headers", extra_headers) && !extra_headers.IsNull()) {
+		if (extra_headers.type().id() != LogicalTypeId::MAP) {
+			throw InvalidInputException("Extra HTTP headers must be a map of string to string");
+		}
+		for (const auto &entry : MapValue::GetChildren(extra_headers)) {
+			const auto &kv_pair = StructValue::GetChildren(entry);
+
+			if (kv_pair.size() == 2 && !kv_pair[0].IsNull() && !kv_pair[1].IsNull()) {
+				auto key = kv_pair[0].ToString();
+
+				if (settings.extra_headers.find(key) == settings.extra_headers.end()) {
+					settings.extra_headers.emplace(key, kv_pair[1].ToString());
+				}
+			}
+		}
+	}
 
 	// Check for custom user agent setting, otherwise use default
 	string custom_user_agent;
@@ -388,6 +405,11 @@ HttpResponseData HttpRequest::ExecuteHttpRequest(const HttpSettings &settings, c
 		duckdb_httplib_openssl::Headers req_headers;
 		for (auto &h : headers) {
 			req_headers.insert({h.first, h.second});
+		}
+		for (auto &h : settings.extra_headers) {
+			if (req_headers.find(h.first) == req_headers.end()) {
+				req_headers.insert({h.first, h.second});
+			}
 		}
 		if (req_headers.find("User-Agent") == req_headers.end()) {
 			req_headers.insert({"User-Agent", settings.user_agent});
