@@ -1,6 +1,11 @@
 Release history
 ---------------
 
+0.3.2
+++++++++++++++++++
+
+- Support for extra HTTP headers in requests via secrets (TYPE http).
+
 0.3.1
 ++++++++++++++++++
 

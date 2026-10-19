@@ -26,10 +26,14 @@ struct BearerTokenAuth {
 // 	https://github.com/midwork-finds-jobs/duckdb_http_request
 // 	Thanks a lot to Onni Hakala (onnimonni) for open sourcing it!
 
+//! Struct to hold HTTP headers map
+using HttpHeaders = unordered_map<string, string>;
+
 //! Struct to hold HTTP settings extracted from context (thread-safe to pass to workers)
 struct HttpSettings {
 	BasicAuth basic_auth;
 	BearerTokenAuth bearer_token_auth;
+	HttpHeaders extra_headers;
 	uint64_t timeout;
 	bool keep_alive;
 	string proxy;
@@ -41,9 +45,6 @@ struct HttpSettings {
 	bool use_cache;
 	bool follow_redirects;
 };
-
-//! Struct to hold HTTP headers map
-using HttpHeaders = unordered_map<string, string>;
 
 //! Struct to hold HTTP response
 struct HttpResponseData {
