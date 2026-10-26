@@ -1,6 +1,7 @@
 set(EXTENSION_SOURCES
     ${EXTENSION_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/filter_eval.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/function_builder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/http_request.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/json_geometry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/json_object.cpp

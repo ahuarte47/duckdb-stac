@@ -13,7 +13,7 @@ GetDebugLevel() {
 	static int level = -1;
 	if (level == -1) {
 		const char *env = std::getenv("STAC_DEBUG");
-		level = env ? std::atoi(env) : 0;
+		level = env ? std::stoi(env) : 0;
 	}
 	return level;
 }
@@ -46,10 +46,6 @@ namespace duckdb {
 
 //! Represents a single STAC item row in the result table.
 struct CollectionRow {
-private:
-	//! A constant NULL value to return for invalid column indices.
-	static const Value NULL_VALUE;
-
 public:
 	duckdb::Value catalog;
 	duckdb::Value id;
@@ -85,10 +81,6 @@ public:
 
 //! Represents a single STAC item row in the result table.
 struct ItemRow {
-private:
-	//! A constant NULL value to return for invalid column indices.
-	static const Value NULL_VALUE;
-
 public:
 	duckdb::Value catalog;
 	duckdb::Value collection;

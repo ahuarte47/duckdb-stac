@@ -5,9 +5,6 @@
 require stac
 
 statement ok
-INSTALL httpfs;
-
-statement ok
 LOAD httpfs;
 
 query IIII

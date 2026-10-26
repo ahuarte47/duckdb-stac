@@ -22,7 +22,7 @@ ExpressionExecutor *FilterEval::GetExecutor() {
 
 		// Initialize the input chunk with the column values from the ItemRow.
 		input.Initialize(context, data_types, 1);
-		input.SetCardinality(1);
+		input.SetChildCardinality(1);
 
 		// Prepare a chunk to hold the results of expression evaluation.
 		result.Initialize(context, vector<LogicalType>(expressions.size(), LogicalType::BOOLEAN), 1);

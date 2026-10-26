@@ -19,7 +19,7 @@ public:
 	//! The set of type names (A type is represented by the join of a catalog and collection identifiers).
 	std::set<std::string> itemtype_set;
 	//! The set of property names (Set of properties and their corresponding index in the column vector).
-	std::map<std::string, int16_t> property_set;
+	std::map<std::string, idx_t> property_set;
 	//! All the column names of the Catalog and its child Catalogs.
 	std::vector<std::string> column_names;
 	//! All the column types of the Catalog and its child Catalogs.
@@ -38,7 +38,7 @@ public:
 	}
 
 	//! Parses a JSON links array to extract the schema of its STAC items recursively.
-	void ParseSchemaOfLinks(std::string catalog_id, std::string collection_id, yyjson_val *links_val,
+	void ParseSchemaOfLinks(const std::string &catalog_id, const std::string &collection_id, yyjson_val *links_val,
 	                        const std::string &links_path, int32_t ttl_seconds);
 
 	//! Parses a JSON object to extract the schema of its STAC items recursively.

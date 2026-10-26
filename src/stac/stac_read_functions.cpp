@@ -71,13 +71,13 @@ public:
 
 public:
 	//! Returns true if the given STAC "rel_type" requires fetching a node link (e.g., a "child" link).
-	virtual bool NeedConsumeLink(const char *rel_type) override {
+	bool NeedConsumeLink(const char *rel_type) override {
 		return rel_type &&
 		       (strcmp(rel_type, "child") == 0 || strcmp(rel_type, "item") == 0 || strcmp(rel_type, "items") == 0);
 	}
 
 	//! Reads the content of a JSON object to extract the child STAC objects.
-	virtual void ReadContentOfObject(yyjson_val *json_val, const std::string &json_path, int32_t ttl_seconds) override {
+	void ReadContentOfObject(yyjson_val *json_val, const std::string &json_path, int32_t ttl_seconds) override {
 		yyjson_val *temp_val = nullptr;
 		const char *item_type = nullptr;
 
@@ -90,7 +90,8 @@ public:
 
 		// Handle data of a STAC Catalog, Collection or Feature...
 
-		if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "type"))) {
+		temp_val = yyjson_obj_get(json_val, "type");
+		if (yyjson_is_str(temp_val)) {
 			item_type = yyjson_get_str(temp_val);
 		}
 		if (!item_type || strlen(item_type) == 0) {
@@ -100,10 +101,12 @@ public:
 		if (strcmp(item_type, "Catalog") == 0) {
 			std::string prev_catalog_id = catalog_id;
 
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
+			temp_val = yyjson_obj_get(json_val, "id");
+			if (yyjson_is_str(temp_val)) {
 				catalog_id = yyjson_get_str(temp_val);
 			}
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+			temp_val = yyjson_obj_get(json_val, "links");
+			if (yyjson_is_arr(temp_val)) {
 				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
 			}
 			catalog_id = prev_catalog_id;
@@ -112,24 +115,31 @@ public:
 		if (strcmp(item_type, "Collection") == 0) {
 			std::string prev_collection_id = collection_id;
 
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
+			temp_val = yyjson_obj_get(json_val, "id");
+			if (yyjson_is_str(temp_val)) {
 				collection_id = yyjson_get_str(temp_val);
 			}
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+			temp_val = yyjson_obj_get(json_val, "links");
+			if (yyjson_is_arr(temp_val)) {
 				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
 			}
 			collection_id = prev_collection_id;
 			return;
 		}
 		if (strcmp(item_type, "FeatureCollection") == 0) {
-			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "search:metadata")) &&
-			    yyjson_is_int(temp_val = yyjson_obj_get(temp_val, "numberMatched"))) {
+			temp_val = yyjson_obj_get(json_val, "search:metadata");
+			if (yyjson_is_obj(temp_val)) {
+				temp_val = yyjson_obj_get(temp_val, "numberMatched");
+				if (yyjson_is_int(temp_val)) {
+					number_matched = yyjson_get_int(temp_val);
+				}
+			}
+			temp_val = yyjson_obj_get(json_val, "numberMatched");
+			if (yyjson_is_int(temp_val)) {
 				number_matched = yyjson_get_int(temp_val);
 			}
-			if (yyjson_is_int(temp_val = yyjson_obj_get(json_val, "numberMatched"))) {
-				number_matched = yyjson_get_int(temp_val);
-			}
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "features"))) {
+			temp_val = yyjson_obj_get(json_val, "features");
+			if (yyjson_is_arr(temp_val)) {
 				std::size_t features_size = yyjson_arr_size(temp_val);
 
 				for (std::size_t i = 0; i < features_size; i++) {
@@ -156,7 +166,8 @@ public:
 					}
 				}
 			}
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+			temp_val = yyjson_obj_get(json_val, "links");
+			if (yyjson_is_arr(temp_val)) {
 				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
 			}
 			return;
@@ -175,28 +186,32 @@ public:
 			row.catalog = Value(catalog_id);
 
 			// Extract id
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
+			temp_val = yyjson_obj_get(json_val, "id");
+			if (yyjson_is_str(temp_val)) {
 				row.id = Value(yyjson_get_str(temp_val));
 			} else {
 				throw InvalidInputException("Missing 'id' field in the JSON Feature '%s'.", json_path.c_str());
 			}
 
 			// Extract geometry as WKT
-			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "geometry"))) {
+			temp_val = yyjson_obj_get(json_val, "geometry");
+			if (yyjson_is_obj(temp_val)) {
 				row.geometry = JsonGeometry::ParseGeometryAsWKT(temp_val);
 			} else {
 				throw InvalidInputException("Missing 'geometry' field in the JSON Feature '%s'.", json_path.c_str());
 			}
 
 			// Extract bbox
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "bbox"))) {
+			temp_val = yyjson_obj_get(json_val, "bbox");
+			if (yyjson_is_arr(temp_val)) {
 				row.bbox = JsonObject::ParseBoundingBoxObject(temp_val);
 			} else {
 				throw InvalidInputException("Missing 'bbox' field in the JSON Feature '%s'.", json_path.c_str());
 			}
 
 			// Extract stac_version
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "stac_version"))) {
+			temp_val = yyjson_obj_get(json_val, "stac_version");
+			if (yyjson_is_str(temp_val)) {
 				row.version = Value(yyjson_get_str(temp_val));
 			} else {
 				throw InvalidInputException("Missing 'stac_version' field in the JSON Feature '%s'.",
@@ -204,7 +219,8 @@ public:
 			}
 
 			// Extract stac_extensions
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "stac_extensions"))) {
+			temp_val = yyjson_obj_get(json_val, "stac_extensions");
+			if (yyjson_is_arr(temp_val)) {
 				row.extensions = JsonObject::ParseExtensionsObject(temp_val);
 			} else {
 				throw InvalidInputException("Missing 'stac_extensions' field in the JSON Feature '%s'.",
@@ -212,52 +228,59 @@ public:
 			}
 
 			// Extract links
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+			temp_val = yyjson_obj_get(json_val, "links");
+			if (yyjson_is_arr(temp_val)) {
 				row.links = JsonObject::ParseLinksObject(temp_val);
 			} else {
 				throw InvalidInputException("Missing 'links' field in the JSON Feature '%s'.", json_path.c_str());
 			}
 
 			// Extract assets
-			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "assets"))) {
+			temp_val = yyjson_obj_get(json_val, "assets");
+			if (yyjson_is_obj(temp_val)) {
 				row.assets = JsonObject::ParseAssetsObject(temp_val);
 			} else {
 				throw InvalidInputException("Missing 'assets' field in the JSON Feature '%s'.", json_path.c_str());
 			}
 
 			// Extract collection id (if present)
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "collection"))) {
+			temp_val = yyjson_obj_get(json_val, "collection");
+			if (yyjson_is_str(temp_val)) {
 				row.collection = Value(yyjson_get_str(temp_val));
 			} else {
 				row.collection = Value(collection_id);
 			}
 
 			// Extract properties (all other dynamic fields)
-			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "properties"))) {
+			temp_val = yyjson_obj_get(json_val, "properties");
+			if (yyjson_is_obj(temp_val)) {
 				yyjson_obj_iter iter;
 				yyjson_obj_iter_init(temp_val, &iter);
 				yyjson_val *key, *val;
 
 				while ((key = yyjson_obj_iter_next(&iter))) {
-					if (yyjson_is_str(key) && (val = yyjson_obj_iter_get_val(key))) {
-						std::string key_str = yyjson_get_str(key);
-						idx_t key_idx = 0;
+					if (yyjson_is_str(key)) {
+						val = yyjson_obj_iter_get_val(key);
+						if (val) {
+							std::string key_str = yyjson_get_str(key);
+							idx_t key_idx = 0;
 
-						// New property? the schema should have been extracted already.
-						auto it = schema.property_set.find(key_str);
-						if (it == schema.property_set.end()) {
-							STAC_SCAN_DEBUG_LOG(
-							    3, " > id=(%s): property '%s' not found in the schema for the JSON Feature '%s'.",
-							    row.id.ToString().c_str(), key_str.c_str(), json_path.c_str());
+							// New property? the schema should have been extracted already.
+							auto it = schema.property_set.find(key_str);
+							if (it == schema.property_set.end()) {
+								STAC_SCAN_DEBUG_LOG(
+								    3, " > id=(%s): property '%s' not found in the schema for the JSON Feature '%s'.",
+								    row.id.ToString().c_str(), key_str.c_str(), json_path.c_str());
 
-							// Skip properties not found in the schema.
-							continue;
-						} else {
-							key_idx = it->second;
+								// Skip properties not found in the schema.
+								continue;
+							} else {
+								key_idx = it->second;
+							}
+
+							// Add the property value to the row.
+							row.properties.emplace(key_idx, JsonObject::GetPropertyValueOfJsonValue(val));
 						}
-
-						// Add the property value to the row.
-						row.properties.emplace(key_idx, JsonObject::GetPropertyValueOfJsonValue(val));
 					}
 				}
 			} else {
@@ -318,11 +341,13 @@ public:
 
 		// Handle data of a STAC Catalog or Collection...
 
-		if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "type"))) {
+		temp_val = yyjson_obj_get(json_val, "type");
+		if (yyjson_is_str(temp_val)) {
 			item_type = yyjson_get_str(temp_val);
 		}
 		if (!item_type || strlen(item_type) == 0) {
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "collections"))) {
+			temp_val = yyjson_obj_get(json_val, "collections");
+			if (yyjson_is_arr(temp_val)) {
 				item_type = "Collections";
 			} else {
 				throw InvalidInputException("Missing 'type' field in the JSON object '%s'.", json_path.c_str());
@@ -332,10 +357,12 @@ public:
 		if (strcmp(item_type, "Catalog") == 0) {
 			std::string prev_catalog_id = catalog_id;
 
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
+			temp_val = yyjson_obj_get(json_val, "id");
+			if (yyjson_is_str(temp_val)) {
 				catalog_id = yyjson_get_str(temp_val);
 			}
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+			temp_val = yyjson_obj_get(json_val, "links");
+			if (yyjson_is_arr(temp_val)) {
 				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
 			}
 			catalog_id = prev_catalog_id;
@@ -347,11 +374,13 @@ public:
 			yyjson_val *coll_val = nullptr;
 
 			for (std::size_t i = 0; i < colls_size; i++) {
-				if (yyjson_is_obj(coll_val = yyjson_arr_get(colls_val, i))) {
+				coll_val = yyjson_arr_get(colls_val, i);
+				if (yyjson_is_obj(coll_val)) {
 					ReadContentOfObject(coll_val, json_path, ttl_seconds);
 				}
 			}
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+			temp_val = yyjson_obj_get(json_val, "links");
+			if (yyjson_is_arr(temp_val)) {
 				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
 			}
 			return;
@@ -370,83 +399,100 @@ public:
 			row.catalog = Value(catalog_id);
 
 			// Extract id
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
+			temp_val = yyjson_obj_get(json_val, "id");
+			if (yyjson_is_str(temp_val)) {
 				row.id = Value(yyjson_get_str(temp_val));
 			} else {
 				throw InvalidInputException("Missing 'id' field in the JSON Collection '%s'.", json_path.c_str());
 			}
 
 			// Extract title
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "title"))) {
+			temp_val = yyjson_obj_get(json_val, "title");
+			if (yyjson_is_str(temp_val)) {
 				row.title = Value(yyjson_get_str(temp_val));
 			}
 
 			// Extract description
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "description"))) {
+			temp_val = yyjson_obj_get(json_val, "description");
+			if (yyjson_is_str(temp_val)) {
 				row.description = Value(yyjson_get_str(temp_val));
 			}
 
 			// Extract keywords
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "keywords"))) {
+			temp_val = yyjson_obj_get(json_val, "keywords");
+			if (yyjson_is_arr(temp_val)) {
 				row.keywords = JsonObject::ParseKeywordsObject(temp_val);
 			}
 
 			// Extract license
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "license"))) {
+			temp_val = yyjson_obj_get(json_val, "license");
+			if (yyjson_is_str(temp_val)) {
 				row.license = Value(yyjson_get_str(temp_val));
 			}
 
 			// Extract providers
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "providers"))) {
+			temp_val = yyjson_obj_get(json_val, "providers");
+			if (yyjson_is_arr(temp_val)) {
 				row.providers = JsonObject::ParseGenericObject(temp_val);
 			}
 
 			// Extract bbox/interval (extent)
-			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "extent"))) {
+			temp_val = yyjson_obj_get(json_val, "extent");
+			if (yyjson_is_obj(temp_val)) {
 				yyjson_val *spatial_val = nullptr;
 				yyjson_val *rngtime_val = nullptr;
 
-				if (yyjson_is_obj(spatial_val = yyjson_obj_get(temp_val, "spatial")) &&
-				    yyjson_is_arr(spatial_val = yyjson_obj_get(spatial_val, "bbox")) &&
-				    yyjson_arr_size(spatial_val) > 0) {
-					yyjson_val *bbox_val = yyjson_arr_get(spatial_val, 0);
-					row.bbox = JsonObject::ParseBoundingBoxObject(bbox_val);
+				spatial_val = yyjson_obj_get(temp_val, "spatial");
+				if (yyjson_is_obj(spatial_val)) {
+					spatial_val = yyjson_obj_get(spatial_val, "bbox");
+					if (yyjson_is_arr(spatial_val) && yyjson_arr_size(spatial_val) > 0) {
+						yyjson_val *bbox_val = yyjson_arr_get(spatial_val, 0);
+						row.bbox = JsonObject::ParseBoundingBoxObject(bbox_val);
+					}
 				}
-				if (yyjson_is_obj(rngtime_val = yyjson_obj_get(temp_val, "temporal")) &&
-				    yyjson_is_arr(rngtime_val = yyjson_obj_get(rngtime_val, "interval")) &&
-				    yyjson_arr_size(rngtime_val) > 0) {
-					yyjson_val *interval_val = yyjson_arr_get(rngtime_val, 0);
-					row.interval = JsonObject::ParseIntervalObject(interval_val);
+				rngtime_val = yyjson_obj_get(temp_val, "temporal");
+				if (yyjson_is_obj(rngtime_val)) {
+					rngtime_val = yyjson_obj_get(rngtime_val, "interval");
+					if (yyjson_is_arr(rngtime_val) && yyjson_arr_size(rngtime_val) > 0) {
+						yyjson_val *interval_val = yyjson_arr_get(rngtime_val, 0);
+						row.interval = JsonObject::ParseIntervalObject(interval_val);
+					}
 				}
 			}
 
 			// Extract summaries
-			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "summaries"))) {
+			temp_val = yyjson_obj_get(json_val, "summaries");
+			if (yyjson_is_obj(temp_val)) {
 				row.summaries = JsonObject::ParseGenericObject(temp_val);
 			}
 
 			// Extract stac_version
-			if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "stac_version"))) {
+			temp_val = yyjson_obj_get(json_val, "stac_version");
+			if (yyjson_is_str(temp_val)) {
 				row.version = Value(yyjson_get_str(temp_val));
 			}
 
 			// Extract stac_extensions
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "stac_extensions"))) {
+			temp_val = yyjson_obj_get(json_val, "stac_extensions");
+			if (yyjson_is_arr(temp_val)) {
 				row.extensions = JsonObject::ParseExtensionsObject(temp_val);
 			}
 
 			// Extract links
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+			temp_val = yyjson_obj_get(json_val, "links");
+			if (yyjson_is_arr(temp_val)) {
 				row.links = JsonObject::ParseLinksObject(temp_val);
 			}
 
 			// Extract assets
-			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "assets"))) {
+			temp_val = yyjson_obj_get(json_val, "assets");
+			if (yyjson_is_obj(temp_val)) {
 				row.assets = JsonObject::ParseAssetsObject(temp_val);
 			}
 
 			// Extract item assets
-			if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "item_assets"))) {
+			temp_val = yyjson_obj_get(json_val, "item_assets");
+			if (yyjson_is_obj(temp_val)) {
 				row.item_assets = JsonObject::ParseGenericObject(temp_val);
 			}
 
@@ -455,7 +501,8 @@ public:
 
 			// Next, extract the links if available.
 
-			if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+			temp_val = yyjson_obj_get(json_val, "links");
+			if (yyjson_is_arr(temp_val)) {
 				ReadContentOfLinks(temp_val, json_path, ttl_seconds);
 			}
 			return;
@@ -475,18 +522,15 @@ struct STAC_Read {
 	struct BindData final : TableFunctionData {
 		// The path (URL or file path) to the STAC Catalog.
 		std::string catalog_path;
-		// The schema of the STAC Catalog.
-		ItemSchema schema;
-
 		// A MemoryStream buffer used for reading JSON content.
 		MemoryStream buffer;
+		// The schema of the STAC Catalog.
+		ItemSchema schema;
 
 		// Offset for the rows to be read.
 		idx_t row_offset = 0;
 		// Limit for the rows to be read (A value of 0 means no limit is applied).
 		std::size_t row_limit = 0;
-		// Total number of items matched by the filter (if any) in the Catalog.
-		int number_matched = -1;
 
 		// Optional search criteria for the STAC API item-search.
 		SearchFilter search_filter;
@@ -496,13 +540,12 @@ struct STAC_Read {
 		// All column types for the output of the table function, including dynamic fields.
 		vector<LogicalType> column_types;
 
-		explicit BindData(ItemSchema &&schema, MemoryStream &&buffer)
-		    : schema(std::move(schema)), buffer(std::move(buffer)) {
+		explicit BindData(ClientContext &context) : buffer(Allocator::Get(context)), schema(context, buffer) {
 		}
 	};
 
 	static unique_ptr<FunctionData> Bind(ClientContext &context, TableFunctionBindInput &input,
-	                                     vector<LogicalType> &return_types, vector<string> &names,
+	                                     vector<LogicalType> &return_types, vector<Identifier> &names,
 	                                     const SearchFilter &search_filter) {
 		D_ASSERT(input.inputs.size() == 1);
 
@@ -538,26 +581,22 @@ struct STAC_Read {
 
 		STAC_SCAN_DEBUG_LOG(1, "Reading the schema of the Catalog '%s'...", catalog_path.c_str());
 
-		MemoryStream buffer(Allocator::Get(context));
+		auto result = make_uniq<BindData>(context);
+		auto json_str = ReadContentOfCatalog(context, result->buffer, catalog_path, search_filter, 30);
+		result->schema.ParseSchemaOfObject("", "", json_str, catalog_path, 30);
 
-		ItemSchema schema {context, buffer};
-		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, search_filter, 30);
-		schema.ParseSchemaOfObject("", "", json_str, catalog_path, 30);
-
-		for (const auto &prop_name : schema.column_names) {
+		for (const auto &prop_name : result->schema.column_names) {
 			names.emplace_back(prop_name);
 		}
-		for (const auto &prop_type : schema.column_types) {
+		for (const auto &prop_type : result->schema.column_types) {
 			return_types.emplace_back(prop_type);
 		}
 
 		// Return the bind data.
 
-		auto result = make_uniq<BindData>(std::move(schema), std::move(buffer));
 		result->catalog_path = std::move(catalog_path);
 		result->column_types = return_types;
 		result->search_filter = search_filter;
-		result->number_matched = schema.GetNumberMatched();
 		result->row_limit = 0;
 		result->row_offset = 0;
 
@@ -565,7 +604,7 @@ struct STAC_Read {
 	}
 
 	static unique_ptr<FunctionData> BindRead(ClientContext &context, TableFunctionBindInput &input,
-	                                         vector<LogicalType> &return_types, vector<string> &names) {
+	                                         vector<LogicalType> &return_types, vector<Identifier> &names) {
 		return Bind(context, input, return_types, names, SearchFilter());
 	}
 
@@ -574,35 +613,51 @@ struct STAC_Read {
 	//------------------------------------------------------------------------------------------------------------------
 
 	struct State final : GlobalTableFunctionState {
+		vector<column_t> column_ids;
+		vector<unique_ptr<Expression>> filter_expressions;
+
+		// A MemoryStream buffer used for reading JSON content.
+		MemoryStream buffer;
+		// The reader of the STAC Catalog.
 		unique_ptr<ItemReader> reader;
-		explicit State(unique_ptr<ItemReader> reader) : reader(std::move(reader)) {
+
+		// Total number of items matched by the filter (if any) in the Catalog.
+		int number_matched = -1;
+
+		State(ClientContext &context, const vector<column_t> &column_ids)
+		    : column_ids(column_ids), buffer(Allocator::Get(context)) {
 		}
 	};
 
 	static unique_ptr<GlobalTableFunctionState> Init(ClientContext &context, TableFunctionInitInput &input) {
+		const auto &bind_data = input.bind_data->Cast<BindData>();
+
 		// Capture the final projected column IDs here, after all optimizer passes.
 		// input.column_ids is guaranteed to match output.data.size() in Execute.
-		auto &bind_data = const_cast<BindData &>(input.bind_data->Cast<BindData>());
-		bind_data.column_ids = input.column_ids;
+		auto gstate = make_uniq<State>(context, input.column_ids);
+
+		for (const auto &expr : bind_data.filter_expressions) {
+			gstate->filter_expressions.push_back(expr->Copy());
+		}
 
 		// The filter expressions built in PushdownComplexFilter reference columns by their absolute table
 		// column index (since the final projection wasn't known yet at that point). Remap them now to the
 		// position within the final projected column list, since that is what FilterEval's input DataChunk
 		// is built with (see filter_eval.cpp).
-		if (!bind_data.filter_expressions.empty()) {
+		if (!gstate->filter_expressions.empty()) {
 			unordered_map<idx_t, idx_t> table_col_to_position;
 
-			for (idx_t i = 0; i < bind_data.column_ids.size(); i++) {
-				table_col_to_position[bind_data.column_ids[i]] = i;
+			for (idx_t i = 0; i < gstate->column_ids.size(); i++) {
+				table_col_to_position[gstate->column_ids[i]] = i;
 			}
-			for (auto &expr : bind_data.filter_expressions) {
+			for (auto &expr : gstate->filter_expressions) {
 				ExpressionIterator::VisitExpressionMutable<BoundReferenceExpression>(
 				    expr, [&table_col_to_position](BoundReferenceExpression &bound_ref, unique_ptr<Expression> &) {
-					    const auto entry = table_col_to_position.find(bound_ref.index);
+					    const auto entry = table_col_to_position.find(bound_ref.Index());
 					    if (entry == table_col_to_position.end()) {
 						    throw InternalException("STAC_Read: filter column was pruned from the projected columns");
 					    }
-					    bound_ref.index = entry->second;
+					    bound_ref.IndexMutable() = entry->second;
 				    });
 			}
 		}
@@ -613,15 +668,12 @@ struct STAC_Read {
 
 		const std::string &catalog_path = bind_data.catalog_path;
 		const ItemSchema &schema = bind_data.schema;
-		MemoryStream &buffer = bind_data.buffer;
-
-		const auto &filter_expressions = bind_data.filter_expressions;
-		const auto &column_ids = bind_data.column_ids;
 		const auto &column_types = bind_data.column_types;
-		auto filter_eval = make_uniq<FilterEval>(context, filter_expressions, column_ids, column_types);
+		auto filter_eval = make_uniq<FilterEval>(context, gstate->filter_expressions, gstate->column_ids, column_types);
 
 		const auto row_offset = bind_data.row_offset;
 		const auto row_limit = bind_data.row_limit;
+		auto &buffer = gstate->buffer;
 		auto reader = make_uniq<ItemReader>(context, buffer, schema, std::move(filter_eval), row_offset, row_limit);
 
 		auto json_str = ReadContentOfCatalog(context, buffer, catalog_path, bind_data.search_filter, 30);
@@ -629,21 +681,24 @@ struct STAC_Read {
 
 		// Set the number of items matched by the filter (if any) in the Catalog.
 
-		if (bind_data.number_matched == -1) {
-			bind_data.number_matched = reader->GetNumberMatched();
+		int32_t number_matched = bind_data.schema.GetNumberMatched();
+		if (number_matched == -1) {
+			number_matched = reader->GetNumberMatched();
 		}
+		gstate->number_matched = number_matched;
 
-		STAC_SCAN_DEBUG_LOG(1, "Request matched %d items", bind_data.number_matched);
+		STAC_SCAN_DEBUG_LOG(1, "Request matched %d items", gstate->number_matched);
 
-		if (bind_data.number_matched > 2048 && bind_data.row_limit == 0) {
+		if (gstate->number_matched > 2048 && bind_data.row_limit == 0) {
 			fprintf(stderr,
 			        "STAC: Warning, the request matched %d items, consider refining the query to get fewer results!\n",
-			        bind_data.number_matched);
+			        gstate->number_matched);
 		}
 
 		// Return the global state with the reader.
 
-		return make_uniq_base<GlobalTableFunctionState, State>(std::move(reader));
+		gstate->reader = std::move(reader);
+		return std::move(gstate);
 	}
 
 	//------------------------------------------------------------------------------------------------------------------
@@ -679,7 +734,7 @@ struct STAC_Read {
 				if (child->type == LogicalOperatorType::LOGICAL_GET) {
 					auto &get = child->Cast<LogicalGet>();
 
-					if (StringUtil::Lower(get.function.name) == "stac_read") {
+					if (StringUtil::Lower(get.function.GetName().GetIdentifierName()) == "stac_read") {
 						auto &bind_data = get.bind_data->Cast<BindData>();
 
 						if (limit.offset_val.Type() == LimitNodeType::CONSTANT_VALUE) {
@@ -730,8 +785,8 @@ struct STAC_Read {
 				    expr_copy, ExpressionClass::BOUND_COLUMN_REF, [&column_ids](unique_ptr<Expression> &child) {
 					    const auto &col_ref = child->Cast<BoundColumnRefExpression>();
 					    const auto &column_alias = col_ref.GetAlias();
-					    const auto &return_type = col_ref.return_type;
-					    const idx_t table_col = column_ids[col_ref.binding.column_index].GetPrimaryIndex();
+					    const auto &return_type = col_ref.GetReturnType();
+					    const idx_t table_col = column_ids[col_ref.Binding().column_index].GetPrimaryIndex();
 					    child = make_uniq<BoundReferenceExpression>(column_alias, return_type, table_col);
 				    });
 
@@ -756,7 +811,6 @@ struct STAC_Read {
 	//------------------------------------------------------------------------------------------------------------------
 
 	static void Execute(ClientContext &context, TableFunctionInput &input, DataChunk &output) {
-		auto &bind_data = const_cast<BindData &>(input.bind_data->Cast<BindData>());
 		auto &gstate = input.global_state->Cast<State>();
 
 		ItemReader *reader = gstate.reader.get();
@@ -768,12 +822,13 @@ struct STAC_Read {
 			const auto &item_row = reader->rows[i];
 
 			if (row_idx >= STANDARD_VECTOR_SIZE - 1) {
-				reader->rows.erase(reader->rows.begin(), reader->rows.begin() + i);
-				output.SetCardinality(row_idx + 1);
+				reader->rows.erase(reader->rows.begin(),
+				                   reader->rows.begin() + static_cast<vector<ItemRow>::difference_type>(i));
+				output.SetChildCardinality(row_idx + 1);
 				return;
 			}
-			for (idx_t col_idx = 0; col_idx < bind_data.column_ids.size(); col_idx++) {
-				const idx_t &dim_index = bind_data.column_ids[col_idx];
+			for (idx_t col_idx = 0; col_idx < gstate.column_ids.size(); col_idx++) {
+				const idx_t dim_index = gstate.column_ids[col_idx];
 				const Value &value = item_row.ValueOf(dim_index);
 				output.data[col_idx].SetValue(row_idx, value);
 			}
@@ -787,12 +842,13 @@ struct STAC_Read {
 				const auto &item_row = reader->rows[i];
 
 				if (row_idx >= STANDARD_VECTOR_SIZE - 1) {
-					reader->rows.erase(reader->rows.begin(), reader->rows.begin() + i);
-					output.SetCardinality(row_idx + 1);
+					reader->rows.erase(reader->rows.begin(),
+					                   reader->rows.begin() + static_cast<vector<ItemRow>::difference_type>(i));
+					output.SetChildCardinality(row_idx + 1);
 					return;
 				}
-				for (idx_t col_idx = 0; col_idx < bind_data.column_ids.size(); col_idx++) {
-					const idx_t &dim_index = bind_data.column_ids[col_idx];
+				for (idx_t col_idx = 0; col_idx < gstate.column_ids.size(); col_idx++) {
+					const idx_t dim_index = gstate.column_ids[col_idx];
 					const Value &value = item_row.ValueOf(dim_index);
 					output.data[col_idx].SetValue(row_idx, value);
 				}
@@ -801,7 +857,7 @@ struct STAC_Read {
 		}
 
 		// Set the cardinality of the output.
-		output.SetCardinality(row_idx);
+		output.SetChildCardinality(row_idx);
 	}
 
 	//------------------------------------------------------------------------------------------------------------------
@@ -813,7 +869,7 @@ struct STAC_Read {
 		auto &gstate = global_state->Cast<State>();
 
 		const ItemReader *reader = gstate.reader.get();
-		int number_matched = reader->GetNumberMatched();
+		int32_t number_matched = gstate.number_matched;
 		std::size_t current_row = reader->GetRowCount();
 
 		// The result size is unknown, no progress to report.
@@ -850,11 +906,10 @@ struct STAC_Read {
 	//------------------------------------------------------------------------------------------------------------------
 
 	static void Register(ExtensionLoader &loader) {
-		InsertionOrderPreservingMap<string> tags;
-		tags.insert("ext", "stac");
-		tags.insert("category", "table");
+		FunctionSignature signature;
+		signature.AddParameter("catalog", LogicalType::VARCHAR);
 
-		TableFunction func("STAC_Read", {LogicalType::VARCHAR}, Execute, BindRead, Init);
+		TableFunction func("STAC_Read", std::move(signature), Execute, BindRead, Init);
 
 		// Enable progress reporting - allows DuckDB to report the progress of the table scan
 		func.table_scan_progress = Progress;
@@ -867,7 +922,13 @@ struct STAC_Read {
 		// that cannot be represented as simple TableFilter objects
 		func.pushdown_complex_filter = PushdownComplexFilter;
 
-		RegisterFunction<TableFunction>(loader, func, CatalogType::TABLE_FUNCTION_ENTRY, DESCRIPTION, EXAMPLE, tags);
+		loader.RegisterFunction(func);
+
+		// Add documentation & tags for the table function
+		InsertionOrderPreservingMap<string> tags;
+		tags.insert("ext", "stac");
+		tags.insert("category", "table");
+		FunctionBuilder::AddTableFunctionDocs(loader, "STAC_Read", DESCRIPTION, EXAMPLE, tags);
 
 		// Register optimizer extension for LIMIT pushdown
 		auto &db = loader.GetDatabaseInstance();
@@ -888,24 +949,24 @@ struct STAC_Search : public STAC_Read {
 	//------------------------------------------------------------------------------------------------------------------
 
 	static unique_ptr<FunctionData> BindSearch(ClientContext &context, TableFunctionBindInput &input,
-	                                           vector<LogicalType> &return_types, vector<string> &names) {
+	                                           vector<LogicalType> &return_types, vector<Identifier> &names) {
 		SearchFilter search_filter;
 
 		// Parse the named parameters for the STAC Search API filter.
 
-		const named_parameter_map_t &named_params = input.named_parameters;
+		const named_argument_map_t &named_params = input.named_parameters;
 
 		auto input_param = named_params.find("collections");
 		if (input_param != named_params.end()) {
 			for (auto &param : ListValue::GetChildren(input_param->second)) {
-				search_filter.collections.push_back(StringValue::Get(param).c_str());
+				search_filter.collections.emplace_back(StringValue::Get(param).c_str());
 			}
 		}
 
 		input_param = named_params.find("ids");
 		if (input_param != named_params.end()) {
 			for (auto &param : ListValue::GetChildren(input_param->second)) {
-				search_filter.ids.push_back(StringValue::Get(param).c_str());
+				search_filter.ids.emplace_back(StringValue::Get(param).c_str());
 			}
 		}
 
@@ -989,21 +1050,21 @@ struct STAC_Search : public STAC_Read {
 	//------------------------------------------------------------------------------------------------------------------
 
 	static void Register(ExtensionLoader &loader) {
-		InsertionOrderPreservingMap<string> tags;
-		tags.insert("ext", "stac");
-		tags.insert("category", "table");
+		FunctionSignature signature;
+		signature.AddParameter("catalog", LogicalType::VARCHAR).WithTypedKwargs("options", [&](TypedKwargs &options) {
+			options.Add("collections", LogicalType::LIST(LogicalType::VARCHAR))
+			    .Add("ids", LogicalType::LIST(LogicalType::VARCHAR))
+			    .Add("datetime", LogicalType::VARCHAR)
+			    .Add("bbox", LogicalType::LIST(LogicalType::DOUBLE))
+			    .Add("intersects", LogicalType::GEOMETRY("EPSG:4326"))
+			    .Add("filter", LogicalType::VARCHAR)
+			    .Add("filter_lang", LogicalType::VARCHAR)
+			    .Add("fields", LogicalType::VARCHAR)
+			    .Add("sortby", LogicalType::VARCHAR)
+			    .Add("max_items", LogicalType::INTEGER);
+		});
 
-		TableFunction func("STAC_Search", {LogicalType::VARCHAR}, Execute, BindSearch, Init);
-		func.named_parameters["collections"] = LogicalType::LIST(LogicalType::VARCHAR);
-		func.named_parameters["ids"] = LogicalType::LIST(LogicalType::VARCHAR);
-		func.named_parameters["datetime"] = LogicalType::VARCHAR;
-		func.named_parameters["bbox"] = LogicalType::LIST(LogicalType::DOUBLE);
-		func.named_parameters["intersects"] = LogicalType::GEOMETRY("EPSG:4326");
-		func.named_parameters["filter"] = LogicalType::VARCHAR;
-		func.named_parameters["filter_lang"] = LogicalType::VARCHAR;
-		func.named_parameters["fields"] = LogicalType::VARCHAR;
-		func.named_parameters["sortby"] = LogicalType::VARCHAR;
-		func.named_parameters["max_items"] = LogicalType::INTEGER;
+		TableFunction func("STAC_Search", std::move(signature), Execute, BindSearch, Init);
 
 		// Enable progress reporting - allows DuckDB to report the progress of the table scan
 		func.table_scan_progress = Progress;
@@ -1016,7 +1077,13 @@ struct STAC_Search : public STAC_Read {
 		// that cannot be represented as simple TableFilter objects
 		func.pushdown_complex_filter = PushdownComplexFilter;
 
-		RegisterFunction<TableFunction>(loader, func, CatalogType::TABLE_FUNCTION_ENTRY, DESCRIPTION, EXAMPLE, tags);
+		loader.RegisterFunction(func);
+
+		// Add documentation & tags for the table function
+		InsertionOrderPreservingMap<string> tags;
+		tags.insert("ext", "stac");
+		tags.insert("category", "table");
+		FunctionBuilder::AddTableFunctionDocs(loader, "STAC_Search", DESCRIPTION, EXAMPLE, tags);
 
 		// Register optimizer extension for LIMIT pushdown
 		auto &db = loader.GetDatabaseInstance();
@@ -1043,7 +1110,7 @@ struct STAC_Collections {
 	};
 
 	static unique_ptr<FunctionData> Bind(ClientContext &context, TableFunctionBindInput &input,
-	                                     vector<LogicalType> &return_types, vector<string> &names) {
+	                                     vector<LogicalType> &return_types, vector<Identifier> &names) {
 		D_ASSERT(input.inputs.size() == 1);
 
 		auto catalog_path = input.inputs[0].GetValue<std::string>();
@@ -1105,18 +1172,17 @@ struct STAC_Collections {
 	//------------------------------------------------------------------------------------------------------------------
 
 	struct State final : GlobalTableFunctionState {
+		vector<column_t> column_ids;
 		idx_t current_idx;
-		explicit State() : current_idx(0) {
+
+		explicit State(vector<column_t> column_ids) : column_ids(std::move(column_ids)), current_idx(0) {
 		}
 	};
 
 	static unique_ptr<GlobalTableFunctionState> Init(ClientContext &context, TableFunctionInitInput &input) {
 		// Capture the final projected column IDs here, after all optimizer passes.
 		// input.column_ids is guaranteed to match output.data.size() in Execute.
-		auto &bind_data = const_cast<BindData &>(input.bind_data->Cast<BindData>());
-		bind_data.column_ids = input.column_ids;
-
-		return make_uniq_base<GlobalTableFunctionState, State>();
+		return make_uniq_base<GlobalTableFunctionState, State>(input.column_ids);
 	}
 
 	//------------------------------------------------------------------------------------------------------------------
@@ -1136,15 +1202,15 @@ struct STAC_Collections {
 		for (const auto next_idx = chunk_end; gstate.current_idx < next_idx; gstate.current_idx++) {
 			const auto &collection_row = bind_data.collections[gstate.current_idx];
 
-			for (idx_t col_idx = 0; col_idx < bind_data.column_ids.size(); col_idx++) {
-				const idx_t &dim_index = bind_data.column_ids[col_idx];
+			for (idx_t col_idx = 0; col_idx < gstate.column_ids.size(); col_idx++) {
+				const idx_t dim_index = gstate.column_ids[col_idx];
 				const Value &value = collection_row.ValueOf(dim_index);
 				output.data[col_idx].SetValue(count, value);
 			}
 			count++;
 		}
 
-		output.SetCardinality(count);
+		output.SetChildCardinality(count);
 	}
 
 	//------------------------------------------------------------------------------------------------------------------
@@ -1164,17 +1230,22 @@ struct STAC_Collections {
 	//------------------------------------------------------------------------------------------------------------------
 
 	static void Register(ExtensionLoader &loader) {
-		InsertionOrderPreservingMap<string> tags;
-		tags.insert("ext", "stac");
-		tags.insert("category", "table");
+		FunctionSignature signature;
+		signature.AddParameter("catalog", LogicalType::VARCHAR);
 
-		TableFunction func("STAC_Collections", {LogicalType::VARCHAR}, Execute, Bind, Init);
+		TableFunction func("STAC_Collections", std::move(signature), Execute, Bind, Init);
 
 		// Enable projection pushdown - allows DuckDB to tell us which columns are needed
 		// The column_ids will be passed to InitGlobal via TableFunctionInitInput
 		func.projection_pushdown = true;
 
-		RegisterFunction<TableFunction>(loader, func, CatalogType::TABLE_FUNCTION_ENTRY, DESCRIPTION, EXAMPLE, tags);
+		loader.RegisterFunction(func);
+
+		// Add documentation & tags for the table function
+		InsertionOrderPreservingMap<string> tags;
+		tags.insert("ext", "stac");
+		tags.insert("category", "table");
+		FunctionBuilder::AddTableFunctionDocs(loader, "STAC_Collections", DESCRIPTION, EXAMPLE, tags);
 	}
 };
 

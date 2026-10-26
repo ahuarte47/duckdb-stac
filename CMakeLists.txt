@@ -3,9 +3,10 @@ cmake_minimum_required(VERSION 3.5)
 # Set extension name here
 set(TARGET_NAME stac)
 
-# DuckDB's extension distribution supports vcpkg. As such, dependencies can be added in ./vcpkg.json and then
-# used in cmake with find_package. Feel free to remove or replace with other dependencies.
-# Note that it should also be removed from vcpkg.json to prevent needlessly installing it..
+# DuckDB's extension distribution supports vcpkg. As such, dependencies can be
+# added in ./vcpkg.json and then used in cmake with find_package. Feel free to
+# remove or replace with other dependencies. Note that it should also be removed
+# from vcpkg.json to prevent needlessly installing it..
 find_package(OpenSSL REQUIRED)
 
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
@@ -13,14 +14,19 @@ set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
 if(EMSCRIPTEN)
   # _LINKED_LIBS influences only Wasm compilation it's unclear why this is
-  # needed, but somehow some global symbols are not properly
-  # exported otherwise this solves by basically re-linking (at the moment the
-  # Wasm binary is actually produced)
+  # needed, but somehow some global symbols are not properly exported otherwise
+  # this solves by basically re-linking (at the moment the Wasm binary is
+  # actually produced)
   set(DUCKDB_EXTENSION_STAC_LINKED_LIBS
       "../../vcpkg_installed/wasm32-emscripten/lib/lib*.a")
 endif()
 
 project(${TARGET_NAME})
+
+set(CMAKE_CXX_STANDARD
+    "17"
+    CACHE STRING "C++ standard to enforce")
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(src/include)
 if(NOT EMSCRIPTEN)
@@ -36,6 +42,15 @@ build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 # Link OpenSSL in both the static library as the loadable extension
 target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
+
+if(APPLE)
+  find_library(COREFOUNDATION_FRAMEWORK CoreFoundation)
+  find_library(SECURITY_FRAMEWORK Security)
+  target_link_libraries(${EXTENSION_NAME} ${COREFOUNDATION_FRAMEWORK}
+                        ${SECURITY_FRAMEWORK})
+  target_link_libraries(${LOADABLE_EXTENSION_NAME} ${COREFOUNDATION_FRAMEWORK}
+                        ${SECURITY_FRAMEWORK})
+endif()
 
 install(
   TARGETS ${EXTENSION_NAME}

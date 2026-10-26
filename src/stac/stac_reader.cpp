@@ -131,7 +131,8 @@ void STACReader::ReadContentOfLinks(yyjson_val *links_val, const std::string &li
 	yyjson_val *link_val = nullptr;
 
 	for (std::size_t i = 0; i < links_size; i++) {
-		if (yyjson_is_obj(link_val = yyjson_arr_get(links_val, i))) {
+		link_val = yyjson_arr_get(links_val, i);
+		if (yyjson_is_obj(link_val)) {
 			const char *href_val = nullptr;
 			const char *rel_type = nullptr;
 
@@ -144,13 +145,15 @@ void STACReader::ReadContentOfLinks(yyjson_val *links_val, const std::string &li
 
 			// Check required fields in the link object.
 
-			if (yyjson_is_str(temp_val = yyjson_obj_get(link_val, "href"))) {
+			temp_val = yyjson_obj_get(link_val, "href");
+			if (yyjson_is_str(temp_val)) {
 				href_val = yyjson_get_str(temp_val);
 			}
 			if (!href_val || strlen(href_val) == 0) {
 				continue; // Skip links without a "href" field.
 			}
-			if (yyjson_is_str(temp_val = yyjson_obj_get(link_val, "rel"))) {
+			temp_val = yyjson_obj_get(link_val, "rel");
+			if (yyjson_is_str(temp_val)) {
 				rel_type = yyjson_get_str(temp_val);
 			}
 			if (!rel_type || strlen(rel_type) == 0) {
@@ -162,12 +165,14 @@ void STACReader::ReadContentOfLinks(yyjson_val *links_val, const std::string &li
 			if (strcmp(rel_type, "next") == 0) {
 				next_href = std::string(href_val);
 
-				if (yyjson_is_str(temp_val = yyjson_obj_get(link_val, "method"))) {
+				temp_val = yyjson_obj_get(link_val, "method");
+				if (yyjson_is_str(temp_val)) {
 					next_method = yyjson_get_str(temp_val);
 				} else {
 					next_method = "GET";
 				}
-				if (yyjson_is_bool(temp_val = yyjson_obj_get(link_val, "merge"))) {
+				temp_val = yyjson_obj_get(link_val, "merge");
+				if (yyjson_is_bool(temp_val)) {
 					next_merge = yyjson_get_bool(temp_val);
 				} else {
 					next_merge = false;
@@ -176,20 +181,25 @@ void STACReader::ReadContentOfLinks(yyjson_val *links_val, const std::string &li
 					next_headers.clear();
 					next_body.clear();
 				}
-				if (yyjson_is_obj(temp_val = yyjson_obj_get(link_val, "headers"))) {
+				temp_val = yyjson_obj_get(link_val, "headers");
+				if (yyjson_is_obj(temp_val)) {
 					yyjson_obj_iter iter;
 					yyjson_obj_iter_init(temp_val, &iter);
 					yyjson_val *key, *val;
 
 					while ((key = yyjson_obj_iter_next(&iter))) {
-						if (yyjson_is_str(key) && (val = yyjson_obj_iter_get_val(key)) && yyjson_is_str(val)) {
-							std::string key_str = yyjson_get_str(key);
-							std::string val_str = yyjson_get_str(val);
-							next_headers[key_str] = val_str;
+						if (yyjson_is_str(key)) {
+							val = yyjson_obj_iter_get_val(key);
+							if (val && yyjson_is_str(val)) {
+								std::string key_str = yyjson_get_str(key);
+								std::string val_str = yyjson_get_str(val);
+								next_headers[key_str] = val_str;
+							}
 						}
 					}
 				}
-				if (yyjson_is_obj(temp_val = yyjson_obj_get(link_val, "body"))) {
+				temp_val = yyjson_obj_get(link_val, "body");
+				if (yyjson_is_obj(temp_val)) {
 					if (next_merge && !next_body.empty()) {
 						throw NotImplementedException(
 						    "The 'body' field in the 'next' link is not supported when 'merge' is true.");

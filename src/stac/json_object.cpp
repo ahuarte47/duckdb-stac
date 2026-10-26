@@ -75,9 +75,8 @@ Value JsonObject::ParseBoundingBoxObject(yyjson_val *bbox_val) {
 			double xmax = yyjson_get_num(xmax_val);
 			double ymax = yyjson_get_num(ymax_val);
 
-			Value bbox = Value::STRUCT({{"xmin", xmin}, {"ymin", ymin}, {"xmax", xmax}, {"ymax", ymax}});
-			bbox.Reinterpret(STACTypes::BBOX());
-			return bbox;
+			return Value::STRUCT(STACTypes::BBOX(),
+			                     {Value::DOUBLE(xmin), Value::DOUBLE(ymin), Value::DOUBLE(xmax), Value::DOUBLE(ymax)});
 		}
 	}
 	return Value();
@@ -129,10 +128,7 @@ Value JsonObject::ParseLinksObject(yyjson_val *links_val) {
 				std::string title = yyjson_is_str(title_val) ? yyjson_get_str(title_val) : "";
 				std::string rel = yyjson_get_str(rel_val);
 
-				Value link = Value::STRUCT({{"href", href}, {"type", type}, {"title", title}, {"rel", rel}});
-				link.Reinterpret(STACTypes::LINK());
-
-				links.push_back(link);
+				links.push_back(Value::STRUCT(STACTypes::LINK(), {Value(href), Value(type), Value(title), Value(rel)}));
 			}
 		}
 	}
@@ -149,7 +145,13 @@ Value JsonObject::ParseAssetsObject(yyjson_val *assets_val) {
 		yyjson_val *key, *val;
 
 		while ((key = yyjson_obj_iter_next(&iter))) {
-			if (yyjson_is_str(key) && (val = yyjson_obj_iter_get_val(key)) && yyjson_is_obj(val)) {
+			if (yyjson_is_str(key)) {
+				val = yyjson_obj_iter_get_val(key);
+
+				if (val == nullptr || !yyjson_is_obj(val)) {
+					continue;
+				}
+
 				yyjson_val *href_val = yyjson_obj_get(val, "href");
 				yyjson_val *type_val = yyjson_obj_get(val, "type");
 				yyjson_val *title_val = yyjson_obj_get(val, "title");
@@ -178,12 +180,8 @@ Value JsonObject::ParseAssetsObject(yyjson_val *assets_val) {
 					}
 				}
 
-				Value asset = Value::STRUCT({{"href", href},
-				                             {"type", type},
-				                             {"title", title},
-				                             {"description", descr},
-				                             {"roles", Value::LIST(LogicalType::VARCHAR, roles)}});
-				asset.Reinterpret(STACTypes::ASSET());
+				Value asset = Value::STRUCT(STACTypes::ASSET(), {Value(href), Value(type), Value(title), Value(descr),
+				                                                 Value::LIST(LogicalType::VARCHAR, roles)});
 
 				keys.emplace_back(yyjson_get_str(key));
 				assets.push_back(asset);

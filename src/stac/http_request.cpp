@@ -500,10 +500,18 @@ struct HttpResponseCacheEntry {
 	std::chrono::steady_clock::time_point created_at;
 };
 
-//! Mutex to protect access to the HTTP request cache
-static std::mutex HTTP_REQUEST_CACHE_LOCK;
-//! In-memory cache for HTTP responses, keyed by a unique cache key derived from the request
-static std::unordered_map<std::string, HttpResponseCacheEntry> HTTP_REQUEST_CACHE;
+//! Simple in-memory cache for HTTP responses
+struct HttpResponseCache {
+	std::mutex lock;
+	std::unordered_map<std::string, HttpResponseCacheEntry> entries;
+};
+
+//! Get the global HTTP response cache instance
+static HttpResponseCache &GetHttpResponseCache() {
+	static HttpResponseCache cache;
+	return cache;
+}
+
 //! Maximum number of entries to keep in the HTTP request cache (to prevent unbounded memory growth)
 static constexpr idx_t HTTP_REQUEST_CACHE_MAX_ENTRIES = 64;
 
@@ -520,7 +528,7 @@ static std::string BuildHttpCacheKey(const std::string &url, const std::string &
 
 	// Sort headers by name to ensure consistent cache key regardless of header order
 
-	if (headers.size() > 0) {
+	if (!headers.empty()) {
 		std::vector<std::pair<std::string, std::string>> sorted_headers;
 
 		sorted_headers.reserve(headers.size());
@@ -541,18 +549,18 @@ static std::string BuildHttpCacheKey(const std::string &url, const std::string &
 }
 
 //! Prune expired entries from the HTTP request cache based on the given TTL (time-to-live)
-static void PruneHttpResponseCache(std::chrono::seconds ttl_seconds) {
+static void PruneHttpResponseCache(HttpResponseCache &cache, std::chrono::seconds ttl_seconds) {
 	const auto now = std::chrono::steady_clock::now();
 
-	for (auto it = HTTP_REQUEST_CACHE.begin(); it != HTTP_REQUEST_CACHE.end();) {
+	for (auto it = cache.entries.begin(); it != cache.entries.end();) {
 		if (now - it->second.created_at > ttl_seconds) {
-			it = HTTP_REQUEST_CACHE.erase(it);
+			it = cache.entries.erase(it);
 		} else {
 			++it;
 		}
 	}
-	if (HTTP_REQUEST_CACHE.size() >= HTTP_REQUEST_CACHE_MAX_ENTRIES) {
-		HTTP_REQUEST_CACHE.erase(HTTP_REQUEST_CACHE.begin());
+	if (cache.entries.size() >= HTTP_REQUEST_CACHE_MAX_ENTRIES) {
+		cache.entries.erase(cache.entries.begin());
 	}
 }
 
@@ -566,16 +574,17 @@ HttpResponseData HttpRequest::ExecuteHttpRequest(const HttpSettings &settings, c
 	if (use_cache) {
 		cache_key = BuildHttpCacheKey(url, method, headers, request_body, content_type);
 
-		std::lock_guard<std::mutex> lock(HTTP_REQUEST_CACHE_LOCK);
+		auto &cache = GetHttpResponseCache();
+		std::lock_guard<std::mutex> lock(cache.lock);
 
-		auto cached_it = HTTP_REQUEST_CACHE.find(cache_key);
-		if (cached_it != HTTP_REQUEST_CACHE.end()) {
+		auto cached_it = cache.entries.find(cache_key);
+		if (cached_it != cache.entries.end()) {
 			const auto now = std::chrono::steady_clock::now();
 
 			if (now - cached_it->second.created_at <= std::chrono::seconds(ttl_seconds)) {
 				return cached_it->second.response;
 			}
-			HTTP_REQUEST_CACHE.erase(cached_it);
+			cache.entries.erase(cached_it);
 		}
 	}
 
@@ -584,12 +593,13 @@ HttpResponseData HttpRequest::ExecuteHttpRequest(const HttpSettings &settings, c
 
 	// Store the response in the cache if caching is enabled
 	if (use_cache) {
-		std::lock_guard<std::mutex> lock(HTTP_REQUEST_CACHE_LOCK);
+		auto &cache = GetHttpResponseCache();
+		std::lock_guard<std::mutex> lock(cache.lock);
 
-		if (HTTP_REQUEST_CACHE.size() >= HTTP_REQUEST_CACHE_MAX_ENTRIES) {
-			PruneHttpResponseCache(std::chrono::seconds(ttl_seconds));
+		if (cache.entries.size() >= HTTP_REQUEST_CACHE_MAX_ENTRIES) {
+			PruneHttpResponseCache(cache, std::chrono::seconds(ttl_seconds));
 		}
-		HTTP_REQUEST_CACHE[cache_key] = {result, std::chrono::steady_clock::now()};
+		cache.entries[cache_key] = {result, std::chrono::steady_clock::now()};
 	}
 
 	return result;

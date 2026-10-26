@@ -2,6 +2,7 @@
 
 // DuckDB
 #include "duckdb.hpp"
+#include "duckdb/common/serializer/memory_stream.hpp"
 
 #include "http_request.hpp"
 #include "search_filter.hpp"
@@ -47,6 +48,7 @@ protected:
 public:
 	//! Constructor for the STACReader class.
 	STACReader(ClientContext &context, MemoryStream &buffer, idx_t row_offset = 0, std::size_t row_limit = 0);
+	virtual ~STACReader() = default;
 
 	//! Returns the total number of objects matched by the filter (if any) in the Catalog.
 	inline int32_t GetNumberMatched() const {

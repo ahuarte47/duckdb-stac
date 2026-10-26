@@ -3,8 +3,6 @@
 
 namespace duckdb {
 
-const Value CollectionRow::NULL_VALUE = Value();
-
 const duckdb::Value &CollectionRow::ValueOf(const idx_t &dim_index) const {
 	switch (dim_index) {
 	case STAC_COLLECTION_CATALOG_COLUMN_INDEX:
@@ -42,8 +40,6 @@ const duckdb::Value &CollectionRow::ValueOf(const idx_t &dim_index) const {
 	}
 }
 
-const Value ItemRow::NULL_VALUE = Value();
-
 const duckdb::Value &ItemRow::ValueOf(const idx_t &dim_index) const {
 	switch (dim_index) {
 	case STAC_ITEM_CATALOG_COLUMN_INDEX:
@@ -72,7 +68,8 @@ const duckdb::Value &ItemRow::ValueOf(const idx_t &dim_index) const {
 		if (it != this->properties.end()) {
 			return it->second;
 		} else {
-			return ItemRow::NULL_VALUE;
+			static const Value NULL_VALUE;
+			return NULL_VALUE;
 		}
 	}
 	}
@@ -82,8 +79,8 @@ LogicalType STACTypes::BBOX() {
 	auto bbox_type = LogicalType::STRUCT({{"minx", LogicalType::DOUBLE},
 	                                      {"miny", LogicalType::DOUBLE},
 	                                      {"maxx", LogicalType::DOUBLE},
-	                                      {"maxy", LogicalType::DOUBLE}});
-	bbox_type.SetAlias("STAC_BBOX");
+	                                      {"maxy", LogicalType::DOUBLE}})
+	                     .WithAlias("STAC_BBOX");
 	return bbox_type;
 }
 
@@ -91,8 +88,8 @@ LogicalType STACTypes::LINK() {
 	auto link_type = LogicalType::STRUCT({{"href", LogicalType::VARCHAR},
 	                                      {"type", LogicalType::VARCHAR},
 	                                      {"title", LogicalType::VARCHAR},
-	                                      {"rel", LogicalType::VARCHAR}});
-	link_type.SetAlias("STAC_LINK");
+	                                      {"rel", LogicalType::VARCHAR}})
+	                     .WithAlias("STAC_LINK");
 	return link_type;
 }
 
@@ -101,8 +98,8 @@ LogicalType STACTypes::ASSET() {
 	                                       {"type", LogicalType::VARCHAR},
 	                                       {"title", LogicalType::VARCHAR},
 	                                       {"description", LogicalType::VARCHAR},
-	                                       {"roles", LogicalType::LIST(LogicalType::VARCHAR)}});
-	asset_type.SetAlias("STAC_ASSET");
+	                                       {"roles", LogicalType::LIST(LogicalType::VARCHAR)}})
+	                      .WithAlias("STAC_ASSET");
 	return asset_type;
 }
 

@@ -17,7 +17,14 @@
 
 namespace {
 
-using namespace duckdb;
+using duckdb::Exception;
+using duckdb::Geometry;
+using duckdb::GeometryType;
+using duckdb::idx_t;
+using duckdb::InvalidInputException;
+using duckdb::optional_idx;
+using duckdb::StringUtil;
+using duckdb::UnsafeNumericCast;
 
 //! Reader for WKT text (Copy of geometry.cpp's TextReader).
 class WktReader {

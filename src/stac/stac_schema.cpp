@@ -24,27 +24,32 @@ void ItemSchema::Clear() {
 	number_matched = -1;
 }
 
-void ItemSchema::ParseSchemaOfLinks(std::string catalog_id, std::string collection_id, yyjson_val *links_val,
-                                    const std::string &links_path, int32_t ttl_seconds) {
+void ItemSchema::ParseSchemaOfLinks(const std::string &catalog_id, const std::string &collection_id,
+                                    yyjson_val *links_val, const std::string &links_path, int32_t ttl_seconds) {
 	yyjson_val *temp_val = nullptr;
 	std::size_t links_size = yyjson_arr_size(links_val);
 	yyjson_val *link_val = nullptr;
 	std::size_t item_count = 0;
 
 	for (std::size_t i = 0; i < links_size; i++) {
-		if (yyjson_is_obj(link_val = yyjson_arr_get(links_val, i))) {
+		link_val = yyjson_arr_get(links_val, i);
+
+		if (yyjson_is_obj(link_val)) {
 			const char *href_val = nullptr;
 			const char *rel_type = nullptr;
 
 			// Check required fields in the link object.
 
-			if (yyjson_is_str(temp_val = yyjson_obj_get(link_val, "href"))) {
+			temp_val = yyjson_obj_get(link_val, "href");
+			if (yyjson_is_str(temp_val)) {
 				href_val = yyjson_get_str(temp_val);
 			}
 			if (!href_val || strlen(href_val) == 0) {
 				continue; // Skip links without a "href" field.
 			}
-			if (yyjson_is_str(temp_val = yyjson_obj_get(link_val, "rel"))) {
+
+			temp_val = yyjson_obj_get(link_val, "rel");
+			if (yyjson_is_str(temp_val)) {
 				rel_type = yyjson_get_str(temp_val);
 			}
 			if (!rel_type || strlen(rel_type) == 0) {
@@ -86,7 +91,8 @@ void ItemSchema::ParseSchemaOfObject(std::string catalog_id, std::string collect
 
 	// Handle data of a STAC Catalog, Collection or Feature...
 
-	if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "type"))) {
+	temp_val = yyjson_obj_get(json_val, "type");
+	if (yyjson_is_str(temp_val)) {
 		item_type = yyjson_get_str(temp_val);
 	}
 	if (!item_type || strlen(item_type) == 0) {
@@ -94,32 +100,41 @@ void ItemSchema::ParseSchemaOfObject(std::string catalog_id, std::string collect
 	}
 
 	if (strcmp(item_type, "Catalog") == 0) {
-		if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
+		temp_val = yyjson_obj_get(json_val, "id");
+		if (yyjson_is_str(temp_val)) {
 			catalog_id = yyjson_get_str(temp_val);
 		}
-		if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+		temp_val = yyjson_obj_get(json_val, "links");
+		if (yyjson_is_arr(temp_val)) {
 			ParseSchemaOfLinks(catalog_id, collection_id, temp_val, json_path, ttl_seconds);
 		}
 		return;
 	}
 	if (strcmp(item_type, "Collection") == 0) {
-		if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "id"))) {
+		temp_val = yyjson_obj_get(json_val, "id");
+		if (yyjson_is_str(temp_val)) {
 			collection_id = yyjson_get_str(temp_val);
 		}
-		if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "links"))) {
+		temp_val = yyjson_obj_get(json_val, "links");
+		if (yyjson_is_arr(temp_val)) {
 			ParseSchemaOfLinks(catalog_id, collection_id, temp_val, json_path, ttl_seconds);
 		}
 		return;
 	}
 	if (strcmp(item_type, "FeatureCollection") == 0) {
-		if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "search:metadata")) &&
-		    yyjson_is_int(temp_val = yyjson_obj_get(temp_val, "numberMatched"))) {
+		temp_val = yyjson_obj_get(json_val, "search:metadata");
+		if (yyjson_is_obj(temp_val)) {
+			temp_val = yyjson_obj_get(temp_val, "numberMatched");
+			if (yyjson_is_int(temp_val)) {
+				number_matched = yyjson_get_int(temp_val);
+			}
+		}
+		temp_val = yyjson_obj_get(json_val, "numberMatched");
+		if (yyjson_is_int(temp_val)) {
 			number_matched = yyjson_get_int(temp_val);
 		}
-		if (yyjson_is_int(temp_val = yyjson_obj_get(json_val, "numberMatched"))) {
-			number_matched = yyjson_get_int(temp_val);
-		}
-		if (yyjson_is_arr(temp_val = yyjson_obj_get(json_val, "features"))) {
+		temp_val = yyjson_obj_get(json_val, "features");
+		if (yyjson_is_arr(temp_val)) {
 			std::size_t features_size = yyjson_arr_size(temp_val);
 
 			for (std::size_t i = 0; i < features_size; i++) {
@@ -135,7 +150,8 @@ void ItemSchema::ParseSchemaOfObject(std::string catalog_id, std::string collect
 	}
 	if (strcmp(item_type, "Feature") == 0) {
 		// Extract collection id (if present)
-		if (yyjson_is_str(temp_val = yyjson_obj_get(json_val, "collection"))) {
+		temp_val = yyjson_obj_get(json_val, "collection");
+		if (yyjson_is_str(temp_val)) {
 			collection_id = yyjson_get_str(temp_val);
 		}
 
@@ -149,22 +165,26 @@ void ItemSchema::ParseSchemaOfObject(std::string catalog_id, std::string collect
 		itemtype_set.insert(feature_type);
 
 		// Extract schema of properties (all other dynamic fields)
-		if (yyjson_is_obj(temp_val = yyjson_obj_get(json_val, "properties"))) {
+		temp_val = yyjson_obj_get(json_val, "properties");
+		if (yyjson_is_obj(temp_val)) {
 			yyjson_obj_iter iter;
 			yyjson_obj_iter_init(temp_val, &iter);
 			yyjson_val *key, *val;
 
 			while ((key = yyjson_obj_iter_next(&iter))) {
-				if (yyjson_is_str(key) && (val = yyjson_obj_iter_get_val(key))) {
-					std::string key_str = yyjson_get_str(key);
+				if (yyjson_is_str(key)) {
+					val = yyjson_obj_iter_get_val(key);
+					if (val) {
+						std::string key_str = yyjson_get_str(key);
 
-					// New property? If so, add it to the schema.
-					auto it = property_set.find(key_str);
-					if (it == property_set.end()) {
-						idx_t key_idx = static_cast<idx_t>(column_names.size());
-						property_set[key_str] = key_idx;
-						column_names.emplace_back(key_str);
-						column_types.emplace_back(JsonObject::GetPropertyTypeOfJsonValue(val));
+						// New property? If so, add it to the schema.
+						auto it = property_set.find(key_str);
+						if (it == property_set.end()) {
+							idx_t key_idx = static_cast<idx_t>(column_names.size());
+							property_set[key_str] = key_idx;
+							column_names.emplace_back(key_str);
+							column_types.emplace_back(JsonObject::GetPropertyTypeOfJsonValue(val));
+						}
 					}
 				}
 			}
@@ -187,7 +207,7 @@ void ItemSchema::ParseSchemaOfObject(std::string catalog_id, std::string collect
 			throw IOException("Failed to get the root value of the JSON object '%s'.", json_path.c_str());
 		}
 
-		ParseSchemaOfObject(catalog_id, collection_id, root_val, json_path, ttl_seconds);
+		ParseSchemaOfObject(std::move(catalog_id), std::move(collection_id), root_val, json_path, ttl_seconds);
 
 		// Make sure to free the JSON document
 		yyjson_doc_free(json_data);
