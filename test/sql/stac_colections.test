@@ -4,6 +4,8 @@
 
 require stac
 
+require httpfs
+
 statement ok
 LOAD httpfs;
 
