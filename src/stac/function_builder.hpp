@@ -57,6 +57,7 @@ public:
 	void SetFilterPrune(propagate_filter_t filter_prune);
 	void SetDescription(const string &desc);
 	void SetExample(const string &ex);
+	void SetVolatile();
 	void CanThrowErrors();
 
 private:
@@ -109,6 +110,10 @@ inline void ScalarFunctionVariantBuilder::SetDescription(const string &desc) {
 
 inline void ScalarFunctionVariantBuilder::SetExample(const string &ex) {
 	description.examples.emplace_back(ex);
+}
+
+inline void ScalarFunctionVariantBuilder::SetVolatile() {
+	function.SetVolatile();
 }
 
 inline void ScalarFunctionVariantBuilder::CanThrowErrors() {
