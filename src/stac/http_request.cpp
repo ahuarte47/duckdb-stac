@@ -204,8 +204,7 @@ HttpSettings HttpRequest::ExtractHttpSettings(ClientContext &context, const stri
 	settings.follow_redirects = true;
 
 	ClientContextFileOpener opener(context);
-	FileOpenerInfo info;
-	info.file_path = url;
+	FileOpenerInfo info(url);
 
 	FileOpener::TryGetCurrentSetting(&opener, "http_timeout", settings.timeout, &info);
 	FileOpener::TryGetCurrentSetting(&opener, "http_keep_alive", settings.keep_alive, &info);
