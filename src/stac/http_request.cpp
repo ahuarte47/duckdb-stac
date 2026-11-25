@@ -9,8 +9,11 @@
 #include "duckdb/common/gzip_file_system.hpp"
 #include "duckdb/common/http_util.hpp"
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/common/types/blob.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/client_context_file_opener.hpp"
+#include "duckdb/main/extension_helper.hpp"
+#include "duckdb/main/http/http_util.hpp"
 #include "duckdb/main/settings.hpp"
 #include "zstd.h"
 
@@ -60,25 +63,6 @@ static string DecompressZstd(const string &compressed) {
 	}
 
 	return string(buffer.data(), actual_size);
-}
-
-// Parse URL into host and path components
-static void ParseUrl(const string &url, string &proto_host_port, string &path) {
-	// Find scheme
-	auto scheme_end = url.find("://");
-	if (scheme_end == string::npos) {
-		throw IOException("Invalid URL: missing scheme");
-	}
-
-	// Find path start (first / after scheme://)
-	auto path_start = url.find('/', scheme_end + 3);
-	if (path_start == string::npos) {
-		proto_host_port = url;
-		path = "/";
-	} else {
-		proto_host_port = url.substr(0, path_start);
-		path = url.substr(path_start);
-	}
 }
 
 // Parse a single Set-Cookie header value into a struct
@@ -282,200 +266,160 @@ HttpSettings HttpRequest::ExtractHttpSettings(ClientContext &context, const stri
 	return settings;
 }
 
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
+static HTTPUtil &GetHTTPUtil(ClientContext &context, const string &url) {
+	auto &db = DatabaseInstance::GetDatabase(context);
+	auto &http_util = HTTPUtil::Get(db);
 
-// Execute HTTP request using synchronous XHR (works in Web Worker context where duckdb-wasm always runs).
-// Uses arraybuffer to safely receive binary/compressed responses, then applies C++ decompression.
-HttpResponseData HttpRequest::ExecuteHttpRequest(const HttpSettings &settings, const string &url, const string &method,
-                                                 const HttpHeaders &headers, const string &request_body,
-                                                 const string &content_type) {
-	HttpResponseData result;
-	result.status_code = 0;
-	result.content_length = -1;
-
-	try {
-		int32_t status_code = 0;
-		int32_t body_len = 0;
-
-		// Use arraybuffer to get raw bytes (safe for compressed/binary responses)
-		char *body_ptr = (char *)EM_ASM_PTR(
-		    {
-			    try {
-				    var url = UTF8ToString($0);
-				    var method = UTF8ToString($1);
-				    var xhr = new XMLHttpRequest();
-				    xhr.open(method, url, false); // false = synchronous
-				    xhr.responseType = 'arraybuffer';
-				    xhr.send(null);
-				    HEAP32[$2 >> 2] = xhr.status;
-				    if (xhr.response && xhr.response.byteLength > 0) {
-					    var bytes = new Uint8Array(xhr.response);
-					    var len = bytes.length;
-					    HEAP32[$3 >> 2] = len;
-					    var ptr = _malloc(len + 1);
-					    HEAPU8.set(bytes, ptr);
-					    HEAPU8[ptr + len] = 0;
-					    return ptr;
-				    }
-				    HEAP32[$3 >> 2] = 0;
-				    return 0;
-			    } catch (e) {
-				    HEAP32[$2 >> 2] = 0;
-				    HEAP32[$3 >> 2] = 0;
-				    return 0;
-			    }
-		    },
-		    url.c_str(), method.c_str(), &status_code, &body_len);
-
-		result.status_code = status_code;
-		if (result.status_code == 0) {
-			result.error = "HTTP request failed (XHR error)";
+	auto scheme_end = url.find("://");
+	if (scheme_end != string::npos && StringUtil::CIEquals(url.substr(0, scheme_end), "https") &&
+	    http_util.GetName() == "Built-In") {
+		if (!ExtensionHelper::TryAutoLoadExtension(context, "httpfs")) {
+			throw MissingExtensionException("This extension needs the httpfs extension for HTTPS URLs. Run INSTALL "
+			                                "httpfs; LOAD httpfs; and try again");
 		}
-		if (body_ptr && body_len > 0) {
-			string raw_body(body_ptr, static_cast<size_t>(body_len));
-			free(body_ptr);
-			// Auto-decompress (same logic as native path)
-			try {
-				if (GZipFileSystem::CheckIsZip(raw_body.data(), raw_body.size())) {
-					result.body = GZipFileSystem::UncompressGZIPString(raw_body);
-				} else if (CheckIsZstd(raw_body.data(), raw_body.size())) {
-					result.body = DecompressZstd(raw_body);
-				} else {
-					result.body = std::move(raw_body);
-				}
-			} catch (...) {
-				result.body = std::move(raw_body);
-			}
-		} else if (body_ptr) {
-			free(body_ptr);
+		auto &loaded_util = HTTPUtil::Get(db);
+		if (loaded_util.GetName() == "Built-In") {
+			throw MissingExtensionException("This extension needs the httpfs extension for HTTPS URLs. Run INSTALL "
+			                                "httpfs; LOAD httpfs; and try again");
 		}
-	} catch (std::exception &e) {
-		result.error = e.what();
+		return loaded_util;
 	}
-
-	return result;
+	return http_util;
 }
 
-#else
-
-// Execute HTTP request with given settings
-HttpResponseData HttpRequest::ExecuteHttpRequest(const HttpSettings &settings, const string &url, const string &method,
-                                                 const HttpHeaders &headers, const string &request_body,
-                                                 const string &content_type) {
+// Execute HTTP request with DuckDB's configured HTTP transport.
+HttpResponseData HttpRequest::ExecuteHttpRequest(ClientContext &context, const HttpSettings &settings,
+                                                 const string &url, const string &method, const HttpHeaders &headers,
+                                                 const string &request_body, const string &content_type) {
 	HttpResponseData result;
 	result.status_code = 0;
 	result.content_length = -1;
 
 	try {
-		string proto_host_port, path;
-		ParseUrl(url, proto_host_port, path);
-
-		duckdb_httplib_openssl::Client client(proto_host_port);
-		client.set_follow_location(settings.follow_redirects);
-		client.set_decompress(false);
-		client.enable_server_certificate_verification(false);
-
-		auto timeout_sec = static_cast<time_t>(settings.timeout);
-		client.set_read_timeout(timeout_sec, 0);
-		client.set_write_timeout(timeout_sec, 0);
-		client.set_connection_timeout(timeout_sec, 0);
-		client.set_keep_alive(settings.keep_alive);
+		auto &http_util = GetHTTPUtil(context, url);
+		auto params = http_util.InitializeParameters(context, url);
+		params->timeout = settings.timeout;
+		params->timeout_usec = 0;
+		params->keep_alive = settings.keep_alive;
+		params->follow_location = settings.follow_redirects;
 
 		if (!settings.proxy.empty()) {
 			string proxy_host;
 			idx_t proxy_port = settings.proxy_port > 0 ? settings.proxy_port : 80;
 			string proxy_copy = settings.proxy;
 			HTTPUtil::ParseHTTPProxyHost(proxy_copy, proxy_host, proxy_port);
-			client.set_proxy(proxy_host, static_cast<int>(proxy_port));
-			if (!settings.proxy_username.empty()) {
-				client.set_proxy_basic_auth(settings.proxy_username, settings.proxy_password);
-			}
+			params->http_proxy = proxy_host;
+			params->http_proxy_port = proxy_port;
+			params->http_proxy_username = settings.proxy_username;
+			params->http_proxy_password = settings.proxy_password;
+		} else {
+			params->http_proxy.clear();
+			params->http_proxy_port = 0;
+			params->http_proxy_username.clear();
+			params->http_proxy_password.clear();
 		}
 
-		if (!settings.basic_auth.username.empty() && !settings.basic_auth.password.empty()) {
-			client.set_basic_auth(settings.basic_auth.username, settings.basic_auth.password);
-		}
-
-		if (!settings.bearer_token_auth.token.empty()) {
-			client.set_bearer_token_auth(settings.bearer_token_auth.token);
-		}
-
-		duckdb_httplib_openssl::Headers req_headers;
+		HTTPHeaders req_headers;
 		for (auto &h : headers) {
-			req_headers.insert({h.first, h.second});
+			req_headers.Insert(h.first, h.second);
 		}
 		for (auto &h : settings.extra_headers) {
-			if (req_headers.find(h.first) == req_headers.end()) {
-				req_headers.insert({h.first, h.second});
+			if (!req_headers.HasHeader(h.first)) {
+				req_headers.Insert(h.first, h.second);
 			}
 		}
-		if (req_headers.find("User-Agent") == req_headers.end()) {
-			req_headers.insert({"User-Agent", settings.user_agent});
+		if (!req_headers.HasHeader("Authorization")) {
+			if (!settings.bearer_token_auth.token.empty()) {
+				req_headers.Insert("Authorization", "Bearer " + settings.bearer_token_auth.token);
+			} else if (!settings.basic_auth.username.empty() && !settings.basic_auth.password.empty()) {
+				auto credentials = settings.basic_auth.username + ":" + settings.basic_auth.password;
+				req_headers.Insert(
+				    "Authorization",
+				    "Basic " + Blob::ToBase64(string_t(credentials.data(), NumericCast<uint32_t>(credentials.size()))));
+			}
+		}
+		if (!req_headers.HasHeader("User-Agent")) {
+			req_headers.Insert("User-Agent", settings.user_agent);
 		}
 
-		duckdb_httplib_openssl::Result res(nullptr, duckdb_httplib_openssl::Error::Unknown);
-
+		unique_ptr<HTTPResponse> response;
 		if (StringUtil::CIEquals(method, "HEAD")) {
-			res = client.Head(path, req_headers);
+			HeadRequestInfo request(url, req_headers, *params);
+			request.try_request = true;
+			response = http_util.Request(request);
 		} else if (StringUtil::CIEquals(method, "DELETE")) {
-			res = client.Delete(path, req_headers);
+			DeleteRequestInfo request(url, req_headers, *params);
+			request.try_request = true;
+			response = http_util.Request(request);
 		} else if (StringUtil::CIEquals(method, "POST")) {
-			string ct = content_type.empty() ? "application/octet-stream" : content_type;
-			res = client.Post(path, req_headers, request_body, ct);
+			if (!req_headers.HasHeader("Content-Type")) {
+				req_headers.Insert("Content-Type", content_type.empty() ? "application/octet-stream" : content_type);
+			}
+			PostRequestInfo request(url, req_headers, *params, const_data_ptr_cast(request_body.data()),
+			                        request_body.size());
+			request.try_request = true;
+			response = http_util.Request(request);
 		} else if (StringUtil::CIEquals(method, "PUT")) {
-			string ct = content_type.empty() ? "application/octet-stream" : content_type;
-			res = client.Put(path, req_headers, request_body, ct);
+			PutRequestInfo request(url, req_headers, *params, const_data_ptr_cast(request_body.data()),
+			                       request_body.size(),
+			                       content_type.empty() ? "application/octet-stream" : content_type);
+			request.try_request = true;
+			response = http_util.Request(request);
 		} else if (StringUtil::CIEquals(method, "PATCH")) {
-			string ct = content_type.empty() ? "application/octet-stream" : content_type;
-			res = client.Patch(path, req_headers, request_body, ct);
+			throw NotImplementedException("HTTP PATCH requests are not supported by DuckDB's HTTPUtil");
 		} else {
-			res = client.Get(path, req_headers);
+			GetRequestInfo request(url, req_headers, *params, {}, {});
+			request.try_request = true;
+			response = http_util.Request(request);
 		}
 
-		if (res.error() != duckdb_httplib_openssl::Error::Success) {
-			result.error = "HTTP request failed: " + to_string(res.error());
+		if (!response || response->HasRequestError()) {
+			result.error = "HTTP request failed: " +
+			               (response ? response->GetRequestError() : string("no response from HTTP provider"));
 			return result;
 		}
 
-		result.status_code = res->status;
-		string response_body = res->body;
+		result.status_code = static_cast<int32_t>(response->status);
 
-		for (auto &header : res->headers) {
-			if (StringUtil::CIEquals(header.first, "Set-Cookie")) {
-				result.cookies.push_back(ParseSetCookieHeader(header.second));
-			} else {
-				string normalized_key = NormalizeHeaderName(header.first);
-				if (StringUtil::CIEquals(header.first, "Content-Type")) {
-					result.content_type = header.second;
-				} else if (StringUtil::CIEquals(header.first, "Content-Length")) {
-					try {
-						result.content_length = std::stoll(header.second);
-					} catch (...) {
+		for (const auto &header : response->headers) {
+			auto values = response->headers.GetHeaderValues(header.first);
+
+			for (const auto &value : values) {
+				if (StringUtil::CIEquals(header.first, "Set-Cookie")) {
+					result.cookies.push_back(ParseSetCookieHeader(value));
+				} else {
+					string normalized_key = NormalizeHeaderName(header.first);
+					if (StringUtil::CIEquals(header.first, "Content-Type")) {
+						result.content_type = value;
+					} else if (StringUtil::CIEquals(header.first, "Content-Length")) {
+						try {
+							result.content_length = std::stoll(value);
+						} catch (...) {
+						}
 					}
-				}
-				bool found = false;
-				for (idx_t i = 0; i < result.header_keys.size(); i++) {
-					if (StringUtil::CIEquals(result.header_keys[i].GetValue<string>(), normalized_key)) {
-						result.header_values[i] = Value(header.second);
-						found = true;
-						break;
+					bool found = false;
+					for (idx_t i = 0; i < result.header_keys.size(); i++) {
+						if (StringUtil::CIEquals(result.header_keys[i].GetValue<string>(), normalized_key)) {
+							result.header_values[i] = Value(value);
+							found = true;
+							break;
+						}
 					}
-				}
-				if (!found) {
-					result.header_keys.push_back(Value(normalized_key));
-					result.header_values.push_back(Value(header.second));
+					if (!found) {
+						result.header_keys.push_back(Value(normalized_key));
+						result.header_values.push_back(Value(value));
+					}
 				}
 			}
 		}
 
 		// Auto-decompress
-		result.body = response_body;
+		result.body = response->body;
 		try {
-			if (GZipFileSystem::CheckIsZip(response_body.data(), response_body.size())) {
-				result.body = GZipFileSystem::UncompressGZIPString(response_body);
-			} else if (CheckIsZstd(response_body.data(), response_body.size())) {
-				result.body = DecompressZstd(response_body);
+			if (GZipFileSystem::CheckIsZip(response->body.data(), response->body.size())) {
+				result.body = GZipFileSystem::UncompressGZIPString(response->body);
+			} else if (CheckIsZstd(response->body.data(), response->body.size())) {
+				result.body = DecompressZstd(response->body);
 			}
 		} catch (...) {
 		}
@@ -486,8 +430,6 @@ HttpResponseData HttpRequest::ExecuteHttpRequest(const HttpSettings &settings, c
 
 	return result;
 }
-
-#endif // __EMSCRIPTEN__
 
 //======================================================================================================================
 // HttpRequest with cache Implementation
@@ -563,9 +505,10 @@ static void PruneHttpResponseCache(HttpResponseCache &cache, std::chrono::second
 	}
 }
 
-HttpResponseData HttpRequest::ExecuteHttpRequest(const HttpSettings &settings, const string &url, const string &method,
-                                                 const HttpHeaders &headers, const string &request_body,
-                                                 const string &content_type, int32_t ttl_seconds) {
+HttpResponseData HttpRequest::ExecuteHttpRequest(ClientContext &context, const HttpSettings &settings,
+                                                 const string &url, const string &method, const HttpHeaders &headers,
+                                                 const string &request_body, const string &content_type,
+                                                 int32_t ttl_seconds) {
 	std::string cache_key;
 
 	// Determine if caching should be used
@@ -588,7 +531,7 @@ HttpResponseData HttpRequest::ExecuteHttpRequest(const HttpSettings &settings, c
 	}
 
 	HttpResponseData result =
-	    HttpRequest::ExecuteHttpRequest(settings, url, method, headers, request_body, content_type);
+	    HttpRequest::ExecuteHttpRequest(context, settings, url, method, headers, request_body, content_type);
 
 	// Store the response in the cache if caching is enabled
 	if (use_cache) {
