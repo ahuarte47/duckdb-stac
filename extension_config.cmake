@@ -11,10 +11,11 @@ duckdb_extension_load(stac
 # e.g.: duckdb_extension_load(json)
 duckdb_extension_load(httpfs
     GIT_URL https://github.com/duckdb/duckdb-httpfs
-    GIT_TAG e4d1cacf6730f1f19ebda9c3bc6b2af040d1af3f
+    GIT_TAG 91df60d5f1e768222c55f3ae24d520117f01deca
 )
 
 # Since DuckDB's v2.0-cyanoptera duckdb_extension_load() only decides what is built;
 # the shell and the test runner link an extension only when a config asks for it.
 # Linked as before the change.
 duckdb_extension_statically_link(stac)
+duckdb_extension_statically_link(httpfs)

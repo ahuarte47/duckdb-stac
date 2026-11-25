@@ -21,7 +21,7 @@ static std::string ExecuteHttpRequest(ClientContext &context, const std::string 
 	settings.timeout = 30;
 
 	HttpResponseData response =
-	    HttpRequest::ExecuteHttpRequest(settings, url, method, headers, body, content_type, ttl_seconds);
+	    HttpRequest::ExecuteHttpRequest(context, settings, url, method, headers, body, content_type, ttl_seconds);
 
 	// Handle the HTTP response and check for errors.
 	if (response.status_code != 200 && response.content_type == "application/json") {

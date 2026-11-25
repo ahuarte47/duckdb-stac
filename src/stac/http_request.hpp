@@ -2,12 +2,6 @@
 
 #include "duckdb.hpp"
 
-#ifndef __EMSCRIPTEN__
-// Use httplib directly for full HTTP method support
-#define CPPHTTPLIB_OPENSSL_SUPPORT
-#include "httplib.hpp"
-#endif
-
 namespace duckdb {
 
 //! Struct to hold basic authentication credentials
@@ -64,14 +58,15 @@ struct HttpRequest {
 	static HttpSettings ExtractHttpSettings(ClientContext &context, const string &url);
 
 	// Execute HTTP request with given settings
-	static HttpResponseData ExecuteHttpRequest(const HttpSettings &settings, const string &url, const string &method,
-	                                           const HttpHeaders &headers, const string &request_body,
-	                                           const string &content_type);
+	static HttpResponseData ExecuteHttpRequest(ClientContext &context, const HttpSettings &settings, const string &url,
+	                                           const string &method, const HttpHeaders &headers,
+	                                           const string &request_body, const string &content_type);
 
 	// Execute HTTP request with given settings, and optional cache TTL in seconds (0 means no caching)
-	static HttpResponseData ExecuteHttpRequest(const HttpSettings &settings, const string &url, const string &method,
-	                                           const HttpHeaders &headers, const string &request_body,
-	                                           const string &content_type, int32_t ttl_seconds);
+	static HttpResponseData ExecuteHttpRequest(ClientContext &context, const HttpSettings &settings, const string &url,
+	                                           const string &method, const HttpHeaders &headers,
+	                                           const string &request_body, const string &content_type,
+	                                           int32_t ttl_seconds);
 };
 
 } // namespace duckdb
