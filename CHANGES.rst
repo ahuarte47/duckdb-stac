@@ -1,6 +1,11 @@
 Release history
 ---------------
 
+0.5.0
+++++++++++++++++++
+
+- Use HTTPUtil instead of httplib
+
 0.4.0
 ++++++++++++++++++
 
